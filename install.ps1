@@ -55,15 +55,37 @@ if ($AutoRestore) { $cfg.autoRestore = $AutoRestore -eq 'on' }
 $cfg | ConvertTo-Json | Set-Content $SR.Config -Encoding utf8
 Write-Host "Config   -> $($SR.Config) (auto-restore $(if ($cfg.autoRestore) { 'on' } else { 'off' }))"
 
-# Icon: copied from the installed Claude Desktop app (not shipped in this repo). Re-run install to refresh.
-$pkg = Get-AppxPackage -Name 'Claude' -ErrorAction SilentlyContinue | Select-Object -First 1
-$logo = if ($pkg) { Get-ChildItem (Join-Path $pkg.InstallLocation 'assets') -Filter 'Square44x44Logo.targetsize-*_altform-unplated.png' -ErrorAction SilentlyContinue |
-                    Sort-Object { [int]($_.Name -replace '.*targetsize-(\d+)_.*', '$1') } | Where-Object { $_.Name -match 'targetsize-(32|48|64)_' } | Select-Object -Last 1 }
-# Standalone (non-Store) Claude Desktop: Squirrel install with app.ico at its root; WT accepts .ico as-is
+# Icon: the orange Claude starburst with no background, taken from the installed Claude Desktop app (not
+# shipped in this repo). Re-run install to refresh.
+#  - Standalone (Squirrel) install: its app.ico is exactly that; WT accepts .ico as-is.
+#  - Store (MSIX) install: has only a tile (burst on an orange square) and a black tray burst, so the tray
+#    burst is recolored with the tile's orange.
+function New-OrangeBurst($trayIco, $tilePng, $outPng) {
+    Add-Type -AssemblyName System.Drawing
+    $tile = [System.Drawing.Bitmap]::new($tilePng); $counts = @{}
+    for ($x = 0; $x -lt $tile.Width; $x++) { for ($y = 0; $y -lt $tile.Height; $y++) {
+        $c = $tile.GetPixel($x, $y); if ($c.A -eq 255 -and -not ($c.R -gt 240 -and $c.G -gt 240)) { $counts[$c.ToArgb()]++ } } }
+    $tile.Dispose()
+    $o = [System.Drawing.Color]::FromArgb(($counts.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 1).Key)
+    $src = ([System.Drawing.Icon]::new($trayIco, 256, 256)).ToBitmap(); $dst = [System.Drawing.Bitmap]::new($src.Width, $src.Height)
+    for ($x = 0; $x -lt $src.Width; $x++) { for ($y = 0; $y -lt $src.Height; $y++) {
+        $a = $src.GetPixel($x, $y).A; if ($a) { $dst.SetPixel($x, $y, [System.Drawing.Color]::FromArgb($a, $o.R, $o.G, $o.B)) } } }
+    $dst.Save($outPng); $dst.Dispose(); $src.Dispose()
+}
+$made = $null
 $squirrelIco = Join-Path $env:LOCALAPPDATA 'AnthropicClaude\app.ico'
-if (-not $logo -and (Test-Path $squirrelIco)) { $logo = Get-Item $squirrelIco; $icon = Join-Path $dest 'claude.ico' }
-if ($logo) {
-    Copy-Item $logo.FullName $icon -Force
+if (Test-Path $squirrelIco) {
+    $icon = Join-Path $dest 'claude.ico'; Copy-Item $squirrelIco $icon -Force; $made = $icon
+} elseif ($pkg = Get-AppxPackage -Name 'Claude' -ErrorAction SilentlyContinue | Select-Object -First 1) {
+    $tray = Join-Path $pkg.InstallLocation 'app\resources\Tray-Win32.ico'
+    $tile = Get-ChildItem (Join-Path $pkg.InstallLocation 'assets') -Filter 'Square44x44Logo.targetsize-*_altform-unplated.png' -ErrorAction SilentlyContinue |
+            Sort-Object { [int]($_.Name -replace '.*targetsize-(\d+)_.*', '$1') } | Where-Object { $_.Name -match 'targetsize-(32|48|64)_' } | Select-Object -Last 1
+    if ((Test-Path $tray) -and $tile) {
+        try { New-OrangeBurst $tray $tile.FullName $icon; $made = $icon }
+        catch { Copy-Item $tile.FullName $icon -Force; $made = $icon }   # recolor failed: use the tile as-is
+    } elseif ($tile) { Copy-Item $tile.FullName $icon -Force; $made = $icon }
+}
+if ($made) {
     # Drop the other format's leftover from an earlier install
     Get-ChildItem $dest -Filter 'claude.*' | Where-Object { $_.Extension -in '.png', '.ico' -and $_.FullName -ne $icon } | Remove-Item -Force
     Write-Host "Icon     -> $icon"
