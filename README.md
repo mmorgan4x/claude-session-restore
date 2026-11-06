@@ -12,6 +12,7 @@ Reopens your Claude Code sessions in Windows Terminal after a crash, in their or
 - **Profiles** (in the **+** dropdown):
   - *Restore Last Claude Session* – resume the most recent crashed session in that tab.
   - *Restore All Claude Sessions* – restore every crashed session, no age limit.
+  - *Claude Resume* – runs `claude --resume` (Claude's session picker).
 
 ## Requirements
 

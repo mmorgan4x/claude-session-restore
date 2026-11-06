@@ -89,6 +89,8 @@ foreach ($wp in $wtPaths) {
                          commandline = "pwsh -NoProfile -NoExit -File `"$restore`" -Last"; startingDirectory = '%USERPROFILE%' }
     $list += [ordered]@{ guid = $SR.GuidAll; name = 'Restore All Claude Sessions'; icon = $icon; hidden = $false
                          commandline = "pwsh -NoProfile -NoExit -File `"$restore`" -All -UseTab"; startingDirectory = '%USERPROFILE%' }
+    $list += [ordered]@{ guid = $SR.GuidResume; name = 'Claude Resume'; icon = $icon; hidden = $false
+                         commandline = 'pwsh -NoExit -Command claude --resume'; startingDirectory = '%USERPROFILE%' }
     $list += [ordered]@{ guid = $SR.GuidSession; name = 'Claude Session'; icon = $icon; hidden = $true
                          commandline = 'pwsh -NoExit'; startingDirectory = '%USERPROFILE%' }
     if (-not $icon) { $list | Where-Object { $_.guid -in $SR.Guids } | ForEach-Object { $_.Remove('icon') } }
