@@ -42,6 +42,12 @@ Before the first change, `~/.claude/settings.json` and the Windows Terminal `set
 
 Install replaces Windows Terminal's `startupActions` and `newTabMenu` (the **+** dropdown layout) and turns off "reopen previous session" (it would duplicate restored tabs). It warns when it does, and `uninstall.ps1` puts your originals back. If you edit the **+** menu after installing, updates keep your edits. The Windows Terminal settings file is rewritten, so comments in it are dropped.
 
+## Optional setup
+
+- **Launch Windows Terminal on login** – Settings › Startup › *Launch on machine startup*, then Save. With auto-restore on, this brings back crashed sessions after a reboot. (Setting `"startOnUserLogin": true` in settings.json alone isn't enough: the Windows startup task stays disabled until it's toggled in the Settings UI or under Windows Settings › Apps › Startup.)
+- **Make + open Claude** – Settings › Startup › *Default profile* › *Claude: New*. The first tab at startup still uses your shell profile for the restore.
+- **Start Claude in a project folder** – set *Starting directory* on *Claude: New* / *Claude: Resume*. Updates keep it, along with any other changes you make to the Claude profiles (color scheme, font, ...); the installer only manages their name, command line, icon and visibility.
+
 ## Uninstall
 
 ```powershell

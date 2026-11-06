@@ -146,16 +146,22 @@ foreach ($wp in $wtPaths) {
     }
 
     if ($w.profiles -is [System.Collections.IList]) { $w.profiles = [ordered]@{ list = $w.profiles } }
+    # Claude profiles: the installer owns name/commandline/icon/hidden. Anything else the user set on them
+    # (startingDirectory, colorScheme, font, ...) is kept on update; startingDirectory is only a first-time default.
+    $existing = @{}; @($w.profiles.list) | Where-Object { $_.guid -in $SR.Guids } | ForEach-Object { $existing[$_.guid] = $_ }
     $list = @($w.profiles.list | Where-Object { $_.guid -notin $SR.Guids })
-    $list += [ordered]@{ guid = $SR.GuidNew; name = 'Claude: New'; icon = $icon; hidden = $false
-                         commandline = 'pwsh -NoExit -Command claude'; startingDirectory = '%USERPROFILE%' }
-    $list += [ordered]@{ guid = $SR.GuidResume; name = 'Claude: Resume'; icon = $icon; hidden = $false
-                         commandline = 'pwsh -NoExit -Command claude --resume'; startingDirectory = '%USERPROFILE%' }
-    $list += [ordered]@{ guid = $SR.GuidAll; name = 'Claude: Restore Previous Sessions'; icon = $icon; hidden = $false
-                         commandline = "pwsh -NoProfile -NoExit -File `"$restore`" -All"; startingDirectory = '%USERPROFILE%' }
-    $list += [ordered]@{ guid = $SR.GuidSession; name = 'Claude: Session'; icon = $icon; hidden = $true
-                         commandline = 'pwsh -NoExit'; startingDirectory = '%USERPROFILE%' }
-    if (-not $icon) { $list | Where-Object { $_.guid -in $SR.Guids } | ForEach-Object { $_.Remove('icon') } }
+    $ours = @(
+        [ordered]@{ guid = $SR.GuidNew;     name = 'Claude: New';                       hidden = $false; commandline = 'pwsh -NoExit -Command claude' }
+        [ordered]@{ guid = $SR.GuidResume;  name = 'Claude: Resume';                    hidden = $false; commandline = 'pwsh -NoExit -Command claude --resume' }
+        [ordered]@{ guid = $SR.GuidAll;     name = 'Claude: Restore Previous Sessions'; hidden = $false; commandline = "pwsh -NoProfile -NoExit -File `"$restore`" -All" }
+        [ordered]@{ guid = $SR.GuidSession; name = 'Claude: Session';                   hidden = $true;  commandline = 'pwsh -NoExit' }
+    )
+    foreach ($p in $ours) {
+        $prof = if ($existing[$p.guid]) { $existing[$p.guid] } else { [ordered]@{ guid = $p.guid; startingDirectory = '%USERPROFILE%' } }
+        foreach ($k in 'name', 'hidden', 'commandline') { $prof[$k] = $p[$k] }
+        if ($icon) { $prof.icon = $icon } else { $prof.Remove('icon') }
+        $list += $prof
+    }
     $w.profiles.list = $list
 
     # Default profile: WT's defaultProfile (guid or name) if it exists, else the first visible profile (what WT uses)
@@ -164,10 +170,14 @@ foreach ($wp in $wtPaths) {
         $def = ($list | Where-Object { -not $_.hidden -and $_.guid -notin $SR.Guids } | Select-Object -First 1).guid
     }
     $defIsOurs = [bool]($list | Where-Object { ($_.guid -eq $def -or $_.name -eq $def) -and $_.guid -in $SR.Guids })
+    # The startup tab is a plain shell running the restore; if the default is a Claude profile (e.g. you made
+    # + open Claude: New), style it as your first shell profile instead
+    $startProfile = if ($defIsOurs) { ($list | Where-Object { -not $_.hidden -and $_.guid -notin $SR.Guids } | Select-Object -First 1).guid } else { $def }
+    if (-not $startProfile) { $startProfile = $def }
 
     # Startup restore only when auto-restore is on; off gives the first tab back to the default profile
     if ($cfg.autoRestore) {
-        $w.startupActions = "nt -p `"$def`" pwsh -NoExit -File `"$restore`" -Startup"
+        $w.startupActions = "nt -p `"$startProfile`" pwsh -NoExit -File `"$restore`" -Startup"
     } elseif ($w.startupActions -match 'session-restore') {
         if ($st.startupActions) { $w.startupActions = $st.startupActions } else { $w.Remove('startupActions') }
     }
