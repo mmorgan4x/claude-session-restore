@@ -118,8 +118,6 @@ foreach ($wp in $wtPaths) {
     $list += [ordered]@{ guid = $SR.GuidSession; name = 'Claude: Session'; icon = $icon; hidden = $true
                          commandline = 'pwsh -NoExit'; startingDirectory = '%USERPROFILE%' }
     if (-not $icon) { $list | Where-Object { $_.guid -in $SR.Guids } | ForEach-Object { $_.Remove('icon') } }
-    # Muted terracotta tab color: WT draws unselected colored tabs faded, a darker base keeps both states readable
-    $list | Where-Object { $_.guid -in $SR.Guids } | ForEach-Object { $_.tabColor = $SR.TabColor }
     $w.profiles.list = $list
 
     # Default profile: WT's defaultProfile (guid or name) if it exists, else the first visible profile (what WT uses)
