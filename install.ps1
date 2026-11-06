@@ -7,7 +7,12 @@
 #
 # -AutoRestore on|off   restore crashed sessions when Windows Terminal starts (default on; omitted keeps the current choice)
 #   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mmorgan4x/claude-session-restore/main/install.ps1))) -AutoRestore off
-param([ValidateSet('on', 'off')][string]$AutoRestore)
+# No [ValidateSet] here: under `irm | iex` the param block runs as a plain statement and the attribute
+# throws on the empty value. Validated by hand instead.
+param([string]$AutoRestore)
+if ($AutoRestore -and $AutoRestore -notin 'on', 'off') {
+    Write-Host "-AutoRestore must be 'on' or 'off' (got '$AutoRestore')" -ForegroundColor Red; return
+}
 
 # Bootstrap: when piped through iex there is no repo on disk, so download it and run from there with pwsh 7
 if (-not $PSScriptRoot -or -not (Test-Path (Join-Path $PSScriptRoot 'src\common.ps1'))) {
