@@ -58,7 +58,7 @@ pwsh -File ~/.claude/session-restore/uninstall.ps1        # -KeepData to keep se
 | `src/tabclose-check.ps1` | Decides tab-close vs window-close/crash after a session ends |
 | `install.ps1` / `uninstall.ps1` | Setup |
 
-The profile icon is copied from your installed Claude Desktop app at install time (re-run `install.ps1` to refresh). Without Claude Desktop, the profiles use the default icon.
+The profile icon is copied from your installed Claude Desktop app (Store or standalone install) at install time (re-run `install.ps1` to refresh). Without Claude Desktop, the profiles use the default icon.
 
 
 ## Limitations

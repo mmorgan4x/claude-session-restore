@@ -59,8 +59,19 @@ Write-Host "Config   -> $($SR.Config) (auto-restore $(if ($cfg.autoRestore) { 'o
 $pkg = Get-AppxPackage -Name 'Claude' -ErrorAction SilentlyContinue | Select-Object -First 1
 $logo = if ($pkg) { Get-ChildItem (Join-Path $pkg.InstallLocation 'assets') -Filter 'Square44x44Logo.targetsize-*_altform-unplated.png' -ErrorAction SilentlyContinue |
                     Sort-Object { [int]($_.Name -replace '.*targetsize-(\d+)_.*', '$1') } | Where-Object { $_.Name -match 'targetsize-(32|48|64)_' } | Select-Object -Last 1 }
-if ($logo) { Copy-Item $logo.FullName $icon -Force; Write-Host "Icon     -> $icon" }
-elseif (-not (Test-Path $icon)) { $icon = $null; Write-Warning 'Claude Desktop not found; profiles will use the default icon.' }
+# Standalone (non-Store) Claude Desktop: Squirrel install with app.ico at its root; WT accepts .ico as-is
+$squirrelIco = Join-Path $env:LOCALAPPDATA 'AnthropicClaude\app.ico'
+if (-not $logo -and (Test-Path $squirrelIco)) { $logo = Get-Item $squirrelIco; $icon = Join-Path $dest 'claude.ico' }
+if ($logo) {
+    Copy-Item $logo.FullName $icon -Force
+    # Drop the other format's leftover from an earlier install
+    Get-ChildItem $dest -Filter 'claude.*' | Where-Object { $_.Extension -in '.png', '.ico' -and $_.FullName -ne $icon } | Remove-Item -Force
+    Write-Host "Icon     -> $icon"
+} else {
+    # Not found now: keep an icon copied by an earlier install, if any
+    $icon = @('claude.png', 'claude.ico') | ForEach-Object { Join-Path $dest $_ } | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $icon) { Write-Warning 'Claude Desktop not found; profiles will use the default icon.' }
+}
 
 # 2. Claude Code hooks (~/.claude/settings.json)
 $cs = Join-Path $HOME '.claude\settings.json'
