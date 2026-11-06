@@ -2,9 +2,11 @@
 # Removes Claude session restore: hooks, Windows Terminal profiles + startup action (restoring the user's
 # originals), and the scripts/data folder.
 #   uninstall.ps1 -KeepData   leave ~/.claude/session-tracker in place
+# Runs from the repo or from the installed copy (~/.claude/session-tracker/uninstall.ps1).
 param([switch]$KeepData)
 $ErrorActionPreference = 'Stop'
-. "$PSScriptRoot\src\common.ps1"
+$common = @("$PSScriptRoot\src\common.ps1", "$PSScriptRoot\common.ps1") | Where-Object { Test-Path $_ } | Select-Object -First 1
+. $common
 
 # Claude Code hooks
 $cs = Join-Path $HOME '.claude\settings.json'

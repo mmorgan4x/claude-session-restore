@@ -20,11 +20,12 @@ Windows, Windows Terminal, PowerShell 7 (`pwsh`), Claude Code (native or npm ins
 ## Install
 
 ```powershell
-git clone https://github.com/mmorgan4x/claude-session-restore
-pwsh -File claude-session-restore\install.ps1
+irm https://raw.githubusercontent.com/mmorgan4x/claude-session-restore/main/install.ps1 | iex
 ```
 
-Restart Windows Terminal. Re-run `install.ps1` to update.
+Restart Windows Terminal. Run the same line again to update.
+
+Or from a clone: `pwsh -File install.ps1`.
 
 Before the first change, `~/.claude/settings.json` and the Windows Terminal `settings.json` are backed up once to `settings.json.pre-session-restore.bak` (plus a rolling `settings.json.bak` on every run).
 
@@ -33,8 +34,12 @@ Install replaces Windows Terminal's `startupActions` and turns off "reopen previ
 ## Uninstall
 
 ```powershell
-pwsh -File claude-session-restore\uninstall.ps1            # -KeepData to keep ~/.claude/session-tracker
+pwsh -File ~/.claude/session-tracker/uninstall.ps1        # -KeepData to keep session data
 ```
+
+## License
+
+[MIT](LICENSE)
 
 ## Files
 
