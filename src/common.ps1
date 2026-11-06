@@ -10,6 +10,19 @@ $SR = @{
 }
 $SR.Sessions = Join-Path $SR.Root 'sessions'
 $SR.State    = Join-Path $SR.Root 'install-state.json'   # user's original WT settings we replaced
+$SR.Config   = Join-Path $SR.Root 'config.json'          # user options, e.g. { "autoRestore": true }
+
+# User options with defaults; a missing or unreadable config.json means defaults
+function Get-SrConfig {
+    $c = [ordered]@{ autoRestore = $true }
+    if (Test-Path $SR.Config) {
+        try {
+            $f = Get-Content $SR.Config -Raw | ConvertFrom-Json -AsHashtable
+            foreach ($k in @($c.Keys)) { if ($f.Contains($k)) { $c[$k] = $f[$k] } }
+        } catch {}
+    }
+    $c
+}
 $SR.Guids    = @($SR.GuidAll, $SR.GuidSession, $SR.GuidResume, $SR.GuidNew)
 
 # Windows Terminal settings files that exist (Store, Preview, unpackaged)

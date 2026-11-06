@@ -4,6 +4,10 @@
 #
 # One-line install (from Windows PowerShell or pwsh):
 #   irm https://raw.githubusercontent.com/mmorgan4x/claude-session-restore/main/install.ps1 | iex
+#
+# -AutoRestore on|off   restore crashed sessions when Windows Terminal starts (default on; omitted keeps the current choice)
+#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mmorgan4x/claude-session-restore/main/install.ps1))) -AutoRestore off
+param([ValidateSet('on', 'off')][string]$AutoRestore)
 
 # Bootstrap: when piped through iex there is no repo on disk, so download it and run from there with pwsh 7
 if (-not $PSScriptRoot -or -not (Test-Path (Join-Path $PSScriptRoot 'src\common.ps1'))) {
@@ -17,7 +21,8 @@ if (-not $PSScriptRoot -or -not (Test-Path (Join-Path $PSScriptRoot 'src\common.
             $ProgressPreference = 'SilentlyContinue'
             Invoke-WebRequest 'https://github.com/mmorgan4x/claude-session-restore/archive/refs/heads/main.zip' -OutFile "$tmp\repo.zip" -UseBasicParsing
             Expand-Archive "$tmp\repo.zip" $tmp
-            pwsh -NoProfile -File "$tmp\claude-session-restore-main\install.ps1"
+            $fwd = if ($AutoRestore) { @('-AutoRestore', $AutoRestore) } else { @() }
+            pwsh -NoProfile -File "$tmp\claude-session-restore-main\install.ps1" @fwd
         } finally { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
     }
     return
@@ -37,6 +42,12 @@ New-Item -ItemType Directory -Force $dest | Out-Null
 Copy-Item (Join-Path $PSScriptRoot 'src\*') $dest -Force
 Copy-Item (Join-Path $PSScriptRoot 'uninstall.ps1') $dest -Force   # so uninstall works without the repo
 Write-Host "Scripts  -> $dest"
+
+# Options: an explicit -AutoRestore wins, otherwise keep what's in config.json (default on)
+$cfg = Get-SrConfig
+if ($AutoRestore) { $cfg.autoRestore = $AutoRestore -eq 'on' }
+$cfg | ConvertTo-Json | Set-Content $SR.Config -Encoding utf8
+Write-Host "Config   -> $($SR.Config) (auto-restore $(if ($cfg.autoRestore) { 'on' } else { 'off' }))"
 
 # Icon: copied from the installed Claude Desktop app (not shipped in this repo). Re-run install to refresh.
 $pkg = Get-AppxPackage -Name 'Claude' -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -82,6 +93,18 @@ foreach ($wp in $wtPaths) {
             Write-Warning "Turning off 'reopen previous session' (it would duplicate restored tabs); uninstall.ps1 restores it."
         }
     }
+    # Added later than the keys above, so also handle installs whose state predates it
+    if (-not $state[$wp].Contains('newTabMenu')) {
+        $ours = $w.newTabMenu -and ($w.newTabMenu.profile -contains $SR.GuidNew)
+        # @() keeps a one-entry menu an array (an if-expression would unwrap it)
+        $state[$wp].newTabMenu = $null
+        if ($w.newTabMenu -and -not $ours) { $state[$wp].newTabMenu = @($w.newTabMenu) }
+        # Windows Terminal's default menu is just [remainingProfiles]: nothing custom to warn about
+        $custom = @($w.newTabMenu | Where-Object { $_.type -ne 'remainingProfiles' })
+        if ($custom -and -not $ours) {
+            Write-Warning "Replacing your custom new-tab menu (newTabMenu); uninstall.ps1 restores it."
+        }
+    }
 
     if ($w.profiles -is [System.Collections.IList]) { $w.profiles = [ordered]@{ list = $w.profiles } }
     $list = @($w.profiles.list | Where-Object { $_.guid -notin $SR.Guids })
@@ -97,7 +120,17 @@ foreach ($wp in $wtPaths) {
     $w.profiles.list = $list
     # Restore on app launch only (not when clicking +), in a tab styled as the default profile
     $def = if ($w.defaultProfile) { $w.defaultProfile } else { 'PowerShell' }
-    $w.startupActions = "nt -p `"$def`" pwsh -NoExit -File `"$restore`" -UseTab"
+    $w.startupActions = "nt -p `"$def`" pwsh -NoExit -File `"$restore`" -UseTab -Startup"
+    # + dropdown: default profile, separator, Claude profiles, separator, everything else (flat, no submenu)
+    $w.newTabMenu = @(
+        [ordered]@{ type = 'profile'; profile = $def }
+        [ordered]@{ type = 'separator' }
+        [ordered]@{ type = 'profile'; profile = $SR.GuidNew }
+        [ordered]@{ type = 'profile'; profile = $SR.GuidResume }
+        [ordered]@{ type = 'profile'; profile = $SR.GuidAll }
+        [ordered]@{ type = 'separator' }
+        [ordered]@{ type = 'remainingProfiles' }
+    )
     if ($w.firstWindowPreference -eq 'persistedWindowLayout') { $w.Remove('firstWindowPreference') }
     Save-Json $w $wp
     Write-Host "Terminal -> $wp"

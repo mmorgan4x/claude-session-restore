@@ -27,9 +27,11 @@ foreach ($wp in Get-WtSettingsPaths) {
     $w = Get-Content $wp -Raw | ConvertFrom-Json -AsHashtable
     if ($w.profiles.list) { $w.profiles.list = @($w.profiles.list | Where-Object { $_.guid -notin $SR.Guids }) }
     if ($w.startupActions -match 'session-tracker') { $w.Remove('startupActions') }
+    if ($w.newTabMenu -and ($w.newTabMenu.profile -contains $SR.GuidNew)) { $w.Remove('newTabMenu') }
     $orig = $state[$wp]
     if ($orig) {
         if ($orig.startupActions) { $w.startupActions = $orig.startupActions }
+        if ($orig.newTabMenu -and -not $w.newTabMenu) { $w.newTabMenu = @($orig.newTabMenu) }
         if ($orig.firstWindowPreference -and -not $w.firstWindowPreference) { $w.firstWindowPreference = $orig.firstWindowPreference }
     }
     Save-Json $w $wp

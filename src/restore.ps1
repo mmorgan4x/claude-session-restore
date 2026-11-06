@@ -3,8 +3,11 @@
 #   restore.ps1 -All       restore every dead session without asking
 #   restore.ps1 -List      just list tracked sessions
 #   -UseTab                resume the first session in this tab, rest in new tabs (used by WT startup / restore-all profile)
-param([switch]$All, [switch]$List, [switch]$UseTab, [int]$Hours = 12)
+#   -Startup               run from Windows Terminal startup; does nothing when autoRestore is off in config.json
+param([switch]$All, [switch]$List, [switch]$UseTab, [switch]$Startup, [int]$Hours = 12)
 . "$PSScriptRoot\common.ps1"
+
+if ($Startup -and -not (Get-SrConfig).autoRestore) { return }
 
 $root = $SR.Root
 $dir  = $SR.Sessions
