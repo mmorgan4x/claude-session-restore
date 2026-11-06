@@ -95,6 +95,7 @@ try {
     $here = $null   # session to resume in this tab (with -UseTab)
     $count = 0
     $tabs = @()
+    $opened = @()   # in tab order (left to right): this tab first with -UseTab, then the new tabs
     foreach ($s in $recent) {
         # Folder missing (unmounted drive, VPN share): keep the entry so it can restore later
         if (-not (Test-Path -LiteralPath $s.Cwd)) {
@@ -106,11 +107,20 @@ try {
         # keep original start time so tab order survives repeated restores
         Set-Content (Join-Path $dir "$($s.Id).seq") $s.Started
         $count++
+        $opened += $s
         if ($UseTab -and -not $here) { $here = $s; continue }
         $title = if ($s.Name) { $s.Name } else { Split-Path $s.Cwd -Leaf }
         $tabs += "nt -p `"$($SR.GuidSession)`" --title $(ConvertTo-WtArg $title) -d $(ConvertTo-WtArg $s.Cwd) pwsh -NoExit -Command claude --resume $($s.Id)"
     }
-    # one wt call so tabs are created in order
+    # Like Chrome, end on the tab you were using: WT doesn't report the focused tab, so use the session with
+    # the most recent activity. New tabs are appended and the last one gets focus, so step left from there.
+    if ($tabs) {
+        $target = $opened | Sort-Object Last | Select-Object -Last 1
+        $back = ($opened.Count - 1) - [array]::IndexOf($opened, $target)
+        $tabs += @('ft -p') * $back
+        if ($target) { Write-SrLog 'restore' $target.Id "focused (most recently active): $($target.Name)" }
+    }
+    # one wt call so tabs are created (and focused) in order
     if ($tabs) { Start-Process wt.exe -ArgumentList ("-w 0 " + ($tabs -join ' ; ')) }
     if ($count) { Write-Host "Claude: restored $count session(s)." -ForegroundColor Green }
     if ($here) {
