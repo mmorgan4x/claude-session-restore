@@ -4,9 +4,9 @@ Reopens your Claude Code sessions in Windows Terminal after a crash, in their or
 
 ## How it works
 
-- **Tracking** – Claude Code `SessionStart`/`SessionEnd` hooks record each session running in Windows Terminal (`~/.claude/session-tracker/sessions/`).
+- **Tracking** – Claude Code `SessionStart`/`SessionEnd`/`UserPromptSubmit` hooks record each session running in Windows Terminal (`~/.claude/session-tracker/sessions/`).
 - **Like Chrome:** closing a single tab (X, `/exit`, Ctrl+D) forgets that session. Closing the whole window or a crash keeps all its sessions for restore. (After a non-clean exit, a detached check waits a few seconds: if Windows Terminal is still running, only the tab was closed.)
-- **Restore** – when Windows Terminal starts, the first tab resumes the first crashed session (`claude --resume <id>`) and the rest open as new tabs to its right, named after the session. Focus ends on the most recently active session (Windows Terminal doesn't expose the focused tab, so last activity stands in for it). Clicking **+** is untouched.
+- **Restore** – when Windows Terminal starts, the first tab resumes the first crashed session (`claude --resume <id>`) and the rest open as new tabs to its right, named after the session. Focus ends on the session you last typed in (Windows Terminal doesn't expose the focused tab; a `UserPromptSubmit` hook records when you type). Clicking **+** is untouched.
   - Sessions active in the last 12h restore automatically; older ones prompt y/N.
   - Sessions with no messages are skipped (nothing to resume).
   - Sessions already open in another Claude process are skipped, so restore never opens a second copy.

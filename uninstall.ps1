@@ -12,7 +12,7 @@ $common = @("$PSScriptRoot\src\common.ps1", "$PSScriptRoot\common.ps1") | Where-
 $cs = Join-Path $HOME '.claude\settings.json'
 if (Test-Path $cs) {
     $s = Get-Content $cs -Raw | ConvertFrom-Json -AsHashtable
-    foreach ($ev in 'SessionStart', 'SessionEnd') {
+    foreach ($ev in $SR.HookEvents.Keys) {
         if (-not $s.hooks -or -not $s.hooks[$ev]) { continue }
         $list = @($s.hooks[$ev] | Where-Object { -not ($_.hooks.command -match 'session-tracker/hook\.ps1') })
         if ($list) { $s.hooks[$ev] = $list } else { $s.hooks.Remove($ev) }

@@ -112,13 +112,14 @@ try {
         $title = if ($s.Name) { $s.Name } else { Split-Path $s.Cwd -Leaf }
         $tabs += "nt -p `"$($SR.GuidSession)`" --title $(ConvertTo-WtArg $title) -d $(ConvertTo-WtArg $s.Cwd) pwsh -NoExit -Command claude --resume $($s.Id)"
     }
-    # Like Chrome, end on the tab you were using: WT doesn't report the focused tab, so use the session with
-    # the most recent activity. New tabs are appended and the last one gets focus, so step left from there.
+    # Like Chrome, end on the tab you were using: WT doesn't report the focused tab, so use the session you
+    # last typed in (falls back to last conversation activity). New tabs are appended and the last one gets
+    # focus, so step left from there.
     if ($tabs) {
-        $target = $opened | Sort-Object Last | Select-Object -Last 1
+        $target = $opened | Sort-Object { $t = Get-LastTyped $_.Id; if ($t) { $t } else { $_.Last } } | Select-Object -Last 1
         $back = ($opened.Count - 1) - [array]::IndexOf($opened, $target)
         $tabs += @('ft -p') * $back
-        if ($target) { Write-SrLog 'restore' $target.Id "focused (most recently active): $($target.Name)" }
+        if ($target) { Write-SrLog 'restore' $target.Id "focused (last typed in): $($target.Name)" }
     }
     # one wt call so tabs are created (and focused) in order
     if ($tabs) { Start-Process wt.exe -ArgumentList ("-w 0 " + ($tabs -join ' ; ')) }

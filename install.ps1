@@ -61,11 +61,12 @@ elseif (-not (Test-Path $icon)) { $icon = $null; Write-Warning 'Claude Desktop n
 $cs = Join-Path $HOME '.claude\settings.json'
 $s  = if (Test-Path $cs) { Get-Content $cs -Raw | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
 if (-not $s.hooks) { $s.hooks = [ordered]@{} }
-foreach ($ev in 'SessionStart', 'SessionEnd') {
-    $arg  = if ($ev -eq 'SessionStart') { 'start' } else { 'end' }
+foreach ($ev in $SR.HookEvents.Keys) {
+    $arg  = $SR.HookEvents[$ev]
     $list = @($s.hooks[$ev] | Where-Object { $_ } | Where-Object { -not ($_.hooks.command -match 'session-tracker/hook\.ps1') })
     $h = [ordered]@{ type = 'command'; command = "pwsh -NoProfile -NonInteractive -File `"$hookPath`" $arg" }
-    if ($ev -eq 'SessionStart') { $h.async = $true }
+    # Only SessionEnd runs synchronously (must finish before the process exits); the rest never delay Claude
+    if ($ev -ne 'SessionEnd') { $h.async = $true }
     $list += [ordered]@{ hooks = @($h) }
     $s.hooks[$ev] = $list
 }
