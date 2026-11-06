@@ -89,9 +89,7 @@ foreach ($wp in $wtPaths) {
                          commandline = 'pwsh -NoExit -Command claude'; startingDirectory = '%USERPROFILE%' }
     $list += [ordered]@{ guid = $SR.GuidResume; name = 'Claude: Resume'; icon = $icon; hidden = $false
                          commandline = 'pwsh -NoExit -Command claude --resume'; startingDirectory = '%USERPROFILE%' }
-    $list += [ordered]@{ guid = $SR.GuidLast; name = 'Claude: Restore Last Session'; icon = $icon; hidden = $false
-                         commandline = "pwsh -NoProfile -NoExit -File `"$restore`" -Last"; startingDirectory = '%USERPROFILE%' }
-    $list += [ordered]@{ guid = $SR.GuidAll; name = 'Claude: Restore All Sessions'; icon = $icon; hidden = $false
+    $list += [ordered]@{ guid = $SR.GuidAll; name = 'Claude: Restore Previous Sessions'; icon = $icon; hidden = $false
                          commandline = "pwsh -NoProfile -NoExit -File `"$restore`" -All -UseTab"; startingDirectory = '%USERPROFILE%' }
     $list += [ordered]@{ guid = $SR.GuidSession; name = 'Claude: Session'; icon = $icon; hidden = $true
                          commandline = 'pwsh -NoExit'; startingDirectory = '%USERPROFILE%' }
