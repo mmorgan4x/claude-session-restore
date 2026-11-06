@@ -22,7 +22,7 @@ if ($Event -eq 'end') {
     if ($s.wtPid) {
         Start-Process pwsh -WindowStyle Hidden -ArgumentList @(
             '-NoProfile', '-NonInteractive', '-File', "`"$PSScriptRoot\closecheck.ps1`"",
-            '-SessionFile', "`"$file`"", '-WtPid', $s.wtPid, '-WtStart', $s.wtStart)
+            '-SessionFile', "`"$file`"", '-WtPid', $s.wtPid, '-WtStart', $s.wtStart, '-ClaudePid', $s.pid)
     }
     exit 0
 }
