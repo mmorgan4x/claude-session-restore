@@ -62,5 +62,5 @@ if (Test-Path $seq) { $started = [long](Get-Content $seq -Raw); Remove-Item $seq
 # Atomic replace so restore.ps1 never reads a half-written file
 Move-Item "$file.tmp" $file -Force
 
-Remove-StaleSessions
+Invoke-SrHousekeeping
 exit 0

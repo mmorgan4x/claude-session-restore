@@ -38,15 +38,9 @@ function Test-SessionAlive($s) {
     [bool]($p -and [math]::Abs(([DateTimeOffset]$p.StartTime).ToUnixTimeSeconds() - $s.pidStart) -le 5)
 }
 
-# Housekeeping (run from the SessionStart hook, so it happens even with auto-restore off): drop dead sessions
-# inactive for $Days, orphaned .seq files, and cap end.log.
-function Remove-StaleSessions([int]$Days = 7) {
-    $cutoff = (Get-Date).AddDays(-$Days)
-    foreach ($f in Get-ChildItem $SR.Sessions -Filter *.json -ErrorAction SilentlyContinue) {
-        try { $s = Get-Content $f.FullName -Raw | ConvertFrom-Json } catch { continue }
-        $last = if ($s.transcript -and (Test-Path -LiteralPath $s.transcript)) { (Get-Item -LiteralPath $s.transcript).LastWriteTime } else { $f.LastWriteTime }
-        if ($last -lt $cutoff -and -not (Test-SessionAlive $s)) { Remove-Item $f.FullName -Force }
-    }
+# Housekeeping (run from the SessionStart hook): orphaned .seq files and cap end.log.
+# Lost sessions themselves are never removed automatically.
+function Invoke-SrHousekeeping {
     Get-ChildItem $SR.Sessions -Filter *.seq -ErrorAction SilentlyContinue |
         Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-1) } | Remove-Item -Force
     $log = Join-Path $SR.Root 'end.log'
