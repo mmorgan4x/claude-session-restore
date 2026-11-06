@@ -10,7 +10,7 @@ Reopens your Claude Code sessions in Windows Terminal after a crash, in their or
   - Sessions active in the last 12h restore automatically; older ones prompt y/N.
   - Sessions with no messages are skipped (nothing to resume).
   - Sessions already open in another Claude process are skipped, so restore never opens a second copy.
-- **Profiles** (in the **+** dropdown, below a separator after your profiles):
+- **Profiles** (in the **+** dropdown, below a separator after your profiles), with terracotta tabs:
   - *Claude: New* – starts a new `claude` session.
   - *Claude: Resume* – runs `claude --resume` (Claude's session picker).
   - *Claude: Restore Previous Sessions* – restore every session lost to a crash or window close, no age limit.
