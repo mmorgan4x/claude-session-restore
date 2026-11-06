@@ -15,9 +15,6 @@ param([string]$AutoRestore, [string]$StartIn)
 if ($AutoRestore -and $AutoRestore -notin 'on', 'off') {
     Write-Host "-AutoRestore must be 'on' or 'off' (got '$AutoRestore')" -ForegroundColor Red; return
 }
-if ($StartIn -and -not (Test-Path -LiteralPath $StartIn -PathType Container)) {
-    Write-Host "-StartIn folder not found: $StartIn" -ForegroundColor Red; return
-}
 
 # Bootstrap: when piped through iex there is no repo on disk, so download it and run from there with pwsh 7
 if (-not $PSScriptRoot -or -not (Test-Path (Join-Path $PSScriptRoot 'src\common.ps1'))) {
@@ -31,7 +28,10 @@ if (-not $PSScriptRoot -or -not (Test-Path (Join-Path $PSScriptRoot 'src\common.
             $ProgressPreference = 'SilentlyContinue'
             Invoke-WebRequest 'https://github.com/mmorgan4x/claude-session-restore/archive/refs/heads/main.zip' -OutFile "$tmp\repo.zip" -UseBasicParsing
             Expand-Archive "$tmp\repo.zip" $tmp
-            $fwd = @(); if ($AutoRestore) { $fwd += '-AutoRestore', $AutoRestore }; if ($StartIn) { $fwd += '-StartIn', $StartIn }
+            # (-StartIn is validated in the child. A trailing '\' would escape the closing quote when Windows
+            # PowerShell 5.1 passes it on, so end it with '.' instead: "C:\x\" -> "C:\x\.")
+            $fwd = @(); if ($AutoRestore) { $fwd += '-AutoRestore', $AutoRestore }
+            if ($StartIn) { $fwd += '-StartIn', $(if ($StartIn.EndsWith('\')) { "$StartIn." } else { $StartIn }) }
             pwsh -NoProfile -File "$tmp\claude-session-restore-main\install.ps1" @fwd
             if ($LASTEXITCODE) { Write-Error "claude-session-restore: install failed (exit code $LASTEXITCODE)." }
         } finally { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
@@ -40,6 +40,19 @@ if (-not $PSScriptRoot -or -not (Test-Path (Join-Path $PSScriptRoot 'src\common.
 }
 
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'Run with PowerShell 7: pwsh -File install.ps1' }
+
+# -StartIn: expand %VAR% (WT style) and ~/relative paths, and store the full file-system path, since WT
+# can't resolve PowerShell-relative paths. A bad value is skipped with a warning; the install still runs.
+if ($StartIn) {
+    $p = [Environment]::ExpandEnvironmentVariables($StartIn)
+    $r = Resolve-Path -LiteralPath $p -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($r -and $r.Provider.Name -eq 'FileSystem' -and (Test-Path -LiteralPath $r.ProviderPath -PathType Container)) {
+        $StartIn = $r.ProviderPath.TrimEnd('\'); if ($StartIn -match '^[A-Za-z]:$') { $StartIn += '\' }
+    } else {
+        Write-Warning "-StartIn folder not found, ignored: $StartIn"; $StartIn = $null
+    }
+}
+
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\src\common.ps1"
 
@@ -152,7 +165,8 @@ foreach ($wp in $wtPaths) {
 
     if ($w.profiles -is [System.Collections.IList]) { $w.profiles = [ordered]@{ list = $w.profiles } }
     # Claude profiles: the installer owns name/commandline/icon/hidden. Anything else the user set on them
-    # (startingDirectory, colorScheme, font, ...) is kept on update; startingDirectory is only a first-time default.
+    # (startingDirectory, colorScheme, font, ...) is kept on update. startingDirectory defaults to %USERPROFILE%
+    # on first install and is changed later only by an explicit -StartIn (New / Resume).
     $existing = @{}; @($w.profiles.list) | Where-Object { $_.guid -in $SR.Guids } | ForEach-Object { $existing[$_.guid] = $_ }
     $list = @($w.profiles.list | Where-Object { $_.guid -notin $SR.Guids })
     $ours = @(
