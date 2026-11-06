@@ -48,7 +48,7 @@ pwsh -File ~/.claude/session-tracker/uninstall.ps1        # -KeepData to keep se
 |---|---|
 | `src/common.ps1` | Shared paths, profile GUIDs, helpers |
 | `src/hook.ps1` | Hook: registers session on start, removes on clean exit |
-| `src/restore.ps1` | Restores crashed sessions (`-List`, `-Last`, `-All`, `-UseTab`, `-Hours N`) |
+| `src/restore.ps1` | Restores crashed sessions (`-List`, `-All`, `-UseTab`, `-Hours N`) |
 | `src/closecheck.ps1` | Decides tab-close vs window-close/crash after a session ends |
 | `install.ps1` / `uninstall.ps1` | Setup |
 

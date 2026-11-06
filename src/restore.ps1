@@ -2,9 +2,8 @@
 #   restore.ps1            restore dead sessions active in last 12h; ask about older ones
 #   restore.ps1 -All       restore every dead session without asking
 #   restore.ps1 -List      just list tracked sessions
-#   restore.ps1 -Last      resume the most recent dead session in this tab
 #   -UseTab                resume the first session in this tab, rest in new tabs (used by WT startup / restore-all profile)
-param([switch]$All, [switch]$List, [switch]$Last, [switch]$UseTab, [int]$Hours = 12)
+param([switch]$All, [switch]$List, [switch]$UseTab, [int]$Hours = 12)
 . "$PSScriptRoot\common.ps1"
 
 $root = $SR.Root
@@ -67,16 +66,6 @@ try {
 
     # Sort by original start time = the order the tabs were opened (left to right)
     $dead = @($sessions | Where-Object { -not $_.Alive } | Sort-Object Started)
-
-    if ($Last) {
-        $s = $dead | Where-Object { Test-Path -LiteralPath $_.Cwd } | Sort-Object Last | Select-Object -Last 1
-        if (-not $s) { Write-Host 'Claude: no crashed sessions to restore.' -ForegroundColor Yellow; return }
-        Remove-Item $s.File -Force
-        Set-Content (Join-Path $dir "$($s.Id).seq") $s.Started
-        $lock.Close(); $lock = $null
-        Start-Here $s
-        return
-    }
 
     if (-not $dead) { if ($All) { Write-Host 'Claude: no crashed sessions to restore.' -ForegroundColor Yellow }; return }
 
