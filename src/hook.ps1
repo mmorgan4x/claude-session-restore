@@ -13,8 +13,17 @@ $file = Join-Path $dir "$($data.session_id).json"
 
 if ($Event -eq 'end') {
     Add-Content (Join-Path $SR.Root 'end.log') "$(Get-Date -Format s) $($data.session_id) reason=$($data.reason)"
-    # Only an explicit quit removes the session; anything else (tab closed, terminal crash) stays restorable
-    if ($data.reason -in 'prompt_input_exit', 'clear', 'logout') { Remove-Item $file -Force }
+    # Explicit quit: remove now
+    if ($data.reason -in 'prompt_input_exit', 'clear', 'logout') { Remove-Item $file -Force; exit 0 }
+    # Otherwise the console is closing: either one tab was closed (Windows Terminal keeps running -> intentional,
+    # like closing a Chrome tab) or the whole window closed / crashed (WT exits -> keep for restore).
+    # Decide a few seconds later from a detached process, since this one dies with the console.
+    $s = Get-Content $file -Raw | ConvertFrom-Json
+    if ($s.wtPid) {
+        Start-Process pwsh -WindowStyle Hidden -ArgumentList @(
+            '-NoProfile', '-NonInteractive', '-File', "`"$PSScriptRoot\closecheck.ps1`"",
+            '-SessionFile', "`"$file`"", '-WtPid', $s.wtPid, '-WtStart', $s.wtStart)
+    }
     exit 0
 }
 
@@ -29,6 +38,11 @@ for ($i = 0; $i -lt 12 -and $p; $i++) {
     $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.ParentProcessId)"
 }
 if (-not $claude) { exit 0 }
+# Keep walking to the hosting Windows Terminal process (used to tell tab-close from window-close/crash)
+$wt = $p
+for ($i = 0; $i -lt 12 -and $wt -and $wt.Name -ne 'WindowsTerminal.exe'; $i++) {
+    $wt = Get-CimInstance Win32_Process -Filter "ProcessId=$($wt.ParentProcessId)"
+}
 
 New-Item -ItemType Directory -Force $dir | Out-Null
 # Restored session: keep its original start time (tab order)
@@ -42,5 +56,7 @@ if (Test-Path $seq) { $started = [long](Get-Content $seq -Raw); Remove-Item $seq
     pid        = $claude.ProcessId
     pidStart   = ([DateTimeOffset]$claude.CreationDate).ToUnixTimeSeconds()
     started    = $started
+    wtPid      = if ($wt) { $wt.ProcessId } else { $null }
+    wtStart    = if ($wt) { ([DateTimeOffset]$wt.CreationDate).ToUnixTimeSeconds() } else { $null }
 } | ConvertTo-Json | Set-Content $file -Encoding utf8
 exit 0

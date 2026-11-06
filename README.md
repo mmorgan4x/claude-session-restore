@@ -5,7 +5,7 @@ Reopens your Claude Code sessions in Windows Terminal after a crash, in their or
 ## How it works
 
 - **Tracking** – Claude Code `SessionStart`/`SessionEnd` hooks record each session running in Windows Terminal (`~/.claude/session-tracker/sessions/`).
-- **Clean exit** (`/exit`, Ctrl+D, `/clear`, logout) removes the session. Anything else (terminal crash, tab closed with X) leaves it restorable.
+- **Like Chrome:** closing a single tab (X, `/exit`, Ctrl+D) forgets that session. Closing the whole window or a crash keeps all its sessions for restore. (After a non-clean exit, a detached check waits a few seconds: if Windows Terminal is still running, only the tab was closed.)
 - **Restore** – when Windows Terminal starts, the first tab resumes the first crashed session (`claude --resume <id>`) and the rest open as new tabs to its right, named after the session. Clicking **+** is untouched.
   - Sessions active in the last 12h restore automatically; older ones prompt y/N.
   - Sessions with no messages are skipped (nothing to resume).
@@ -50,6 +50,7 @@ pwsh -File ~/.claude/session-tracker/uninstall.ps1        # -KeepData to keep se
 | `src/common.ps1` | Shared paths, profile GUIDs, helpers |
 | `src/hook.ps1` | Hook: registers session on start, removes on clean exit |
 | `src/restore.ps1` | Restores crashed sessions (`-List`, `-Last`, `-All`, `-UseTab`, `-Hours N`) |
+| `src/closecheck.ps1` | Decides tab-close vs window-close/crash after a session ends |
 | `install.ps1` / `uninstall.ps1` | Setup |
 
 The profile icon is copied from your installed Claude Desktop app at install time (re-run `install.ps1` to refresh). Without Claude Desktop, the profiles use the default icon.
