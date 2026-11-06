@@ -61,6 +61,12 @@ pwsh -File ~/.claude/session-tracker/uninstall.ps1        # -KeepData to keep se
 The profile icon is copied from your installed Claude Desktop app at install time (re-run `install.ps1` to refresh). Without Claude Desktop, the profiles use the default icon.
 
 
+## Limitations
+
+- Tabs restore in the order the sessions were opened. Rearranging tabs by dragging isn't tracked (Windows Terminal doesn't expose tab positions).
+- Everything restores into one window.
+- Only Claude sessions restore, not plain shell tabs.
+
 ## Log
 
 `~/.claude/session-tracker/events.log` has one line per session start/end, close check and restore decision (why each session was reopened, kept, skipped or forgotten). A start line marked `DUPLICATE` means the same session was opened in two places.
