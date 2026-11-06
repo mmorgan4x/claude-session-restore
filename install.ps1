@@ -121,19 +121,16 @@ foreach ($wp in $wtPaths) {
     # Restore on app launch only (not when clicking +), in a tab styled as the default profile
     $def = if ($w.defaultProfile) { $w.defaultProfile } else { 'PowerShell' }
     $w.startupActions = "nt -p `"$def`" pwsh -NoExit -File `"$restore`" -UseTab -Startup"
-    # + dropdown: default profile, separator, Claude profiles, separator, everything else (flat, no submenu)
+    # + dropdown: default profile, other profiles, separator, Claude profiles (flat, no submenu)
+    # Other profiles sit right under the default (empty if all hidden), so no separator can ever double up
     $w.newTabMenu = @(
         [ordered]@{ type = 'profile'; profile = $def }
+        [ordered]@{ type = 'remainingProfiles' }
         [ordered]@{ type = 'separator' }
         [ordered]@{ type = 'profile'; profile = $SR.GuidNew }
         [ordered]@{ type = 'profile'; profile = $SR.GuidResume }
         [ordered]@{ type = 'profile'; profile = $SR.GuidAll }
     )
-    # Separator + the rest only if other visible profiles exist; otherwise it doubles up with WT's own
-    # separator above Settings
-    $defGuid = ($list | Where-Object { $_.guid -eq $def -or $_.name -eq $def } | Select-Object -First 1).guid
-    $others = @($list | Where-Object { -not $_.hidden -and $_.guid -ne $defGuid -and $_.guid -notin $SR.Guids })
-    if ($others) { $w.newTabMenu += [ordered]@{ type = 'separator' }, [ordered]@{ type = 'remainingProfiles' } }
     if ($w.firstWindowPreference -eq 'persistedWindowLayout') { $w.Remove('firstWindowPreference') }
     Save-Json $w $wp
     Write-Host "Terminal -> $wp"
