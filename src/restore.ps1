@@ -116,7 +116,10 @@ try {
     # last typed in (falls back to last conversation activity). New tabs are appended and the last one gets
     # focus, so step left from there.
     if ($tabs) {
-        $target = $opened | Sort-Object { $t = Get-LastTyped $_.Id; if ($t) { $t } else { $_.Last } } | Select-Object -Last 1
+        # Sessions you typed in always beat ones you didn't (conversation activity includes Claude's replies)
+        $typed  = @($opened | Where-Object { Get-LastTyped $_.Id })
+        $target = if ($typed) { $typed | Sort-Object { Get-LastTyped $_.Id } | Select-Object -Last 1 }
+                  else { $opened | Sort-Object Last | Select-Object -Last 1 }
         $back = ($opened.Count - 1) - [array]::IndexOf($opened, $target)
         $tabs += @('ft -p') * $back
         if ($target) { Write-SrLog 'restore' $target.Id "focused (last typed in): $($target.Name)" }

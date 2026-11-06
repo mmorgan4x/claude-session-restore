@@ -13,7 +13,9 @@ $file = Join-Path $dir "$($data.session_id).json"
 
 # You typed a prompt: record when (restore focuses the tab you typed in last)
 if ($Event -eq 'prompt') {
-    if (Test-Path $file) { Set-Content (Join-Path $dir "$($data.session_id).typed") '' }
+    # Always write (the async start hook may not have registered the session yet); housekeeping drops orphans
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    Set-Content (Join-Path $dir "$($data.session_id).typed") ''
     exit 0
 }
 
