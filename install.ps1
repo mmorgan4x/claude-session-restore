@@ -131,7 +131,7 @@ foreach ($wp in $wtPaths) {
 
     # Startup restore only when auto-restore is on; off gives the first tab back to the default profile
     if ($cfg.autoRestore) {
-        $w.startupActions = "nt -p `"$def`" pwsh -NoExit -File `"$restore`" -UseTab -Startup"
+        $w.startupActions = "nt -p `"$def`" pwsh -NoExit -File `"$restore`" -Startup"
     } elseif ($w.startupActions -match 'session-tracker') {
         if ($st.startupActions) { $w.startupActions = $st.startupActions } else { $w.Remove('startupActions') }
     }
