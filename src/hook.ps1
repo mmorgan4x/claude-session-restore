@@ -12,9 +12,10 @@ $dir  = $SR.Sessions
 $file = Join-Path $dir "$($data.session_id).json"
 
 if ($Event -eq 'end') {
-    Add-Content (Join-Path $SR.Root 'end.log') "$(Get-Date -Format s) $($data.session_id) reason=$($data.reason)"
+    $clean = $data.reason -in 'prompt_input_exit', 'clear', 'logout'
+    Write-SrLog 'end' $data.session_id "reason=$($data.reason)$(if ($clean) { ' -> forgotten' } else { ' -> checking' })"
     # Explicit quit: remove now
-    if ($data.reason -in 'prompt_input_exit', 'clear', 'logout') { Remove-Item $file -Force; exit 0 }
+    if ($clean) { Remove-Item $file -Force; exit 0 }
     # Otherwise the console is closing: either one tab was closed (Windows Terminal keeps running -> intentional,
     # like closing a Chrome tab) or the whole window closed / crashed (WT exits -> keep for restore).
     # Decide a few seconds later from a detached process, since this one dies with the console.
@@ -45,6 +46,11 @@ for ($i = 0; $i -lt 12 -and $wt -and $wt.Name -ne 'WindowsTerminal.exe'; $i++) {
 }
 
 New-Item -ItemType Directory -Force $dir | Out-Null
+# Same session already running in another Claude process? (two copies would diverge and both keep working)
+$prev = if (Test-Path $file) { try { Get-Content $file -Raw | ConvertFrom-Json } catch {} }
+$dup = $prev -and $prev.pid -ne $claude.ProcessId -and (Test-SessionAlive $prev)
+Write-SrLog 'start' $data.session_id ("source=$($data.source) pid=$($claude.ProcessId) cwd=$($data.cwd)" +
+    $(if ($dup) { " DUPLICATE: already running as pid $($prev.pid)" } else { '' }))
 # Restored session: keep its original start time (tab order)
 $seq = Join-Path $dir "$($data.session_id).seq"
 $started = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()

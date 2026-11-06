@@ -8,6 +8,7 @@ param([switch]$All, [switch]$List, [switch]$UseTab, [switch]$Startup, [int]$Hour
 . "$PSScriptRoot\common.ps1"
 
 if ($Startup -and -not (Get-SrConfig).autoRestore) { return }
+$trigger = if ($Startup) { 'startup' } elseif ($All) { 'profile' } else { 'manual' }
 
 $root = $SR.Root
 $dir  = $SR.Sessions
@@ -45,13 +46,13 @@ try {
         if (-not $alive -and $s.wtPid) {
             $wt = Get-Process -Id $s.wtPid -ErrorAction SilentlyContinue
             if ($wt -and [math]::Abs(([DateTimeOffset]$wt.StartTime).ToUnixTimeSeconds() - $s.wtStart) -le 5) {
-                if (-not $List) { Remove-Item $f.FullName -Force }
+                if (-not $List) { Remove-Item $f.FullName -Force; Write-SrLog 'restore' $s.sessionId 'tab was closed, terminal still running -> forgotten' }
                 continue
             }
         }
         $hasTranscript = $s.transcript -and (Test-Path -LiteralPath $s.transcript)
         # Dead session that never got a message: nothing to resume, drop it
-        if (-not $alive -and -not $hasTranscript -and -not $List) { Remove-Item $f.FullName -Force; continue }
+        if (-not $alive -and -not $hasTranscript -and -not $List) { Remove-Item $f.FullName -Force; Write-SrLog 'restore' $s.sessionId 'no messages -> dropped'; continue }
         $lastActive = if ($hasTranscript) { (Get-Item -LiteralPath $s.transcript).LastWriteTime }
                 else { [DateTimeOffset]::FromUnixTimeSeconds($s.started).LocalDateTime }
         # Only read transcripts we might show or restore
@@ -67,6 +68,15 @@ try {
     # Sort by original start time = the order the tabs were opened (left to right)
     $dead = @($sessions | Where-Object { -not $_.Alive } | Sort-Object Started)
 
+    # Never open a second copy of a session that's already open in another Claude process
+    # (e.g. resumed by hand outside Windows Terminal); keep its entry
+    if ($dead) {
+        $running = Get-RunningSessionIds
+        $dead = @($dead | Where-Object {
+            if ($running.ContainsKey($_.Id)) { Write-SrLog 'restore' $_.Id "already open (pid $($running[$_.Id])) -> skipped"; $false } else { $true }
+        })
+    }
+
     if (-not $dead) { if ($All) { Write-Host 'Claude: no crashed sessions to restore.' -ForegroundColor Yellow }; return }
 
     $cutoff = (Get-Date).AddHours(-$Hours)
@@ -77,7 +87,8 @@ try {
         Write-Host "Claude: $($old.Count) session(s) older than ${Hours}h didn't exit cleanly:" -ForegroundColor Yellow
         $old | ForEach-Object { Write-Host ("  {0:g}  {1}  {2}" -f $_.Last, $_.Name, $_.Cwd) }
         $ans = Read-Host 'Restore them too? [y/N]'
-        if ($ans -match '^y') { $recent += $old } else { $old | ForEach-Object { Remove-Item $_.File -Force } }
+        if ($ans -match '^y') { $recent += $old }
+        else { $old | ForEach-Object { Remove-Item $_.File -Force; Write-SrLog 'restore' $_.Id 'older than cutoff, declined -> forgotten' } }
     }
 
     $recent = @($recent | Sort-Object Started)
@@ -86,8 +97,12 @@ try {
     $tabs = @()
     foreach ($s in $recent) {
         # Folder missing (unmounted drive, VPN share): keep the entry so it can restore later
-        if (-not (Test-Path -LiteralPath $s.Cwd)) { Write-Host "Claude: folder not found, kept for later: $($s.Cwd)" -ForegroundColor Red; continue }
+        if (-not (Test-Path -LiteralPath $s.Cwd)) {
+            Write-Host "Claude: folder not found, kept for later: $($s.Cwd)" -ForegroundColor Red
+            Write-SrLog 'restore' $s.Id "folder not found ($($s.Cwd)) -> kept"; continue
+        }
         Remove-Item $s.File -Force   # re-registers itself when it starts
+        Write-SrLog 'restore' $s.Id "reopened via $trigger$(if ($UseTab -and -not $here) { ' (this tab)' }): $($s.Name)"
         # keep original start time so tab order survives repeated restores
         Set-Content (Join-Path $dir "$($s.Id).seq") $s.Started
         $count++

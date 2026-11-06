@@ -11,6 +11,24 @@ $SR = @{
 $SR.Sessions = Join-Path $SR.Root 'sessions'
 $SR.State    = Join-Path $SR.Root 'install-state.json'   # user's original WT settings we replaced
 $SR.Config   = Join-Path $SR.Root 'config.json'          # user options, e.g. { "autoRestore": true }
+$SR.Log      = Join-Path $SR.Root 'events.log'           # one line per start/end/close-check/restore decision
+
+# Append a timestamped line to events.log: "<time> <event> <session id> <details>"
+function Write-SrLog([string]$Event, [string]$Id = '-', [string]$Detail = '') {
+    try { Add-Content $SR.Log ("{0} {1,-9} {2} {3}" -f (Get-Date -Format s), $Event, $Id, $Detail).TrimEnd() -Encoding utf8 } catch {}
+}
+
+# Session ids currently open in some Claude process (via `--resume <id>` / `-r <id>` on its command line),
+# so restore never opens a second copy of a session that is already running
+function Get-RunningSessionIds {
+    $ids = @{}
+    Get-CimInstance Win32_Process -Filter "Name='claude.exe' OR Name='node.exe'" -ErrorAction SilentlyContinue | ForEach-Object {
+        foreach ($m in [regex]::Matches("$($_.CommandLine)", '(?:--resume|-r)[ =]"?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})')) {
+            $ids[$m.Groups[1].Value] = $_.ProcessId
+        }
+    }
+    $ids
+}
 
 # User options. Keeps every key in config.json (so unknown/future options survive a re-install) and
 # normalises known ones; a missing or unreadable file means defaults.
@@ -38,12 +56,13 @@ function Test-SessionAlive($s) {
     [bool]($p -and [math]::Abs(([DateTimeOffset]$p.StartTime).ToUnixTimeSeconds() - $s.pidStart) -le 5)
 }
 
-# Housekeeping (run from the SessionStart hook): orphaned .seq files and cap end.log.
+# Housekeeping (run from the SessionStart hook): orphaned .seq files and cap events.log.
 # Lost sessions themselves are never removed automatically.
 function Invoke-SrHousekeeping {
     Get-ChildItem $SR.Sessions -Filter *.seq -ErrorAction SilentlyContinue |
         Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-1) } | Remove-Item -Force
-    $log = Join-Path $SR.Root 'end.log'
+    Remove-Item (Join-Path $SR.Root 'end.log') -Force -ErrorAction SilentlyContinue   # pre-events.log name
+    $log = $SR.Log
     if ((Test-Path $log) -and (Get-Item $log).Length -gt 256KB) {
         $keep = Get-Content $log -Tail 1000; Set-Content $log $keep -Encoding utf8
     }

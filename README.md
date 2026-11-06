@@ -9,6 +9,7 @@ Reopens your Claude Code sessions in Windows Terminal after a crash, in their or
 - **Restore** – when Windows Terminal starts, the first tab resumes the first crashed session (`claude --resume <id>`) and the rest open as new tabs to its right, named after the session. Clicking **+** is untouched.
   - Sessions active in the last 12h restore automatically; older ones prompt y/N.
   - Sessions with no messages are skipped (nothing to resume).
+  - Sessions already open in another Claude process are skipped, so restore never opens a second copy.
 - **Profiles** (in the **+** dropdown, below a separator after your profiles):
   - *Claude: New* – starts a new `claude` session.
   - *Claude: Resume* – runs `claude --resume` (Claude's session picker).
@@ -58,6 +59,11 @@ pwsh -File ~/.claude/session-tracker/uninstall.ps1        # -KeepData to keep se
 | `install.ps1` / `uninstall.ps1` | Setup |
 
 The profile icon is copied from your installed Claude Desktop app at install time (re-run `install.ps1` to refresh). Without Claude Desktop, the profiles use the default icon.
+
+
+## Log
+
+`~/.claude/session-tracker/events.log` has one line per session start/end, close check and restore decision (why each session was reopened, kept, skipped or forgotten). A start line marked `DUPLICATE` means the same session was opened in two places.
 
 ## License
 

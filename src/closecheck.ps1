@@ -11,10 +11,10 @@ $alive = $wt -and [math]::Abs(([DateTimeOffset]$wt.StartTime).ToUnixTimeSeconds(
 $id = [IO.Path]::GetFileNameWithoutExtension($SessionFile)
 # Session reopened meanwhile (new Claude process re-registered it): leave the new entry alone
 $cur = Get-Content $SessionFile -Raw | ConvertFrom-Json
-if (-not $cur -or $cur.pid -ne $ClaudePid) { exit 0 }
+if (-not $cur -or $cur.pid -ne $ClaudePid) { Write-SrLog 'check' $id "reopened meanwhile (pid $($cur.pid)) -> left alone"; exit 0 }
 if ($alive) {
     Remove-Item $SessionFile -Force
-    Add-Content (Join-Path $SR.Root 'end.log') "$(Get-Date -Format s) $id tab closed (terminal still running) -> forgotten"
+    Write-SrLog 'check' $id 'tab closed, terminal still running -> forgotten'
 } else {
-    Add-Content (Join-Path $SR.Root 'end.log') "$(Get-Date -Format s) $id terminal closed -> kept for restore"
+    Write-SrLog 'check' $id 'terminal closed/crashed -> kept for restore'
 }
