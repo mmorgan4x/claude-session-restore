@@ -1,24 +1,14 @@
 #Requires -Version 7
 # Installs Claude session restore: copies scripts, adds Claude Code hooks, adds Windows Terminal profiles + startup restore.
-# Safe to re-run (updates in place). Backs up both settings files first.
+# Safe to re-run (updates in place). Original settings are backed up once to *.pre-session-restore.bak,
+# and any startupActions / firstWindowPreference we replace are saved so uninstall.ps1 can put them back.
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\src\common.ps1"
 
-$dest     = Join-Path $HOME '.claude\session-tracker'
+$dest     = $SR.Root
 $hookPath = ($dest -replace '\\', '/') + '/hook.ps1'
 $restore  = Join-Path $dest 'restore.ps1'
 $icon     = Join-Path $dest 'claude.png'
-
-# Fixed GUIDs so re-install / uninstall can find our profiles
-$G = @{
-    Last    = '{2f6c8e1a-9b4d-4c7e-a3f5-6d1b8c9e0a24}'
-    All     = '{8a3d5f7b-1c2e-4b9a-8f6d-3e7c1a5b9d02}'
-    Session = '{c1a0de5e-5e55-4d0a-9c1a-0de5e55e0001}'
-}
-
-function Save-Json($obj, $path) {
-    Copy-Item $path "$path.bak" -Force -ErrorAction SilentlyContinue
-    $obj | ConvertTo-Json -Depth 32 | Set-Content $path -Encoding utf8
-}
 
 # 1. Scripts
 New-Item -ItemType Directory -Force $dest | Out-Null
@@ -32,7 +22,7 @@ if (-not $s.hooks) { $s.hooks = [ordered]@{} }
 foreach ($ev in 'SessionStart', 'SessionEnd') {
     $arg  = if ($ev -eq 'SessionStart') { 'start' } else { 'end' }
     $list = @($s.hooks[$ev] | Where-Object { $_ } | Where-Object { -not ($_.hooks.command -match 'session-tracker/hook\.ps1') })
-    $h = [ordered]@{ type = 'command'; command = "pwsh -NoProfile -NonInteractive -File $hookPath $arg" }
+    $h = [ordered]@{ type = 'command'; command = "pwsh -NoProfile -NonInteractive -File `"$hookPath`" $arg" }
     if ($ev -eq 'SessionStart') { $h.async = $true }
     $list += [ordered]@{ hooks = @($h) }
     $s.hooks[$ev] = $list
@@ -40,32 +30,45 @@ foreach ($ev in 'SessionStart', 'SessionEnd') {
 Save-Json $s $cs
 Write-Host "Hooks    -> $cs"
 
-# 3. Windows Terminal (Store, Preview, or unpackaged install)
-$wtPaths = @(
-    "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
-    "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json",
-    "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
-) | Where-Object { Test-Path $_ }
+# 3. Windows Terminal
+$wtPaths = Get-WtSettingsPaths
 if (-not $wtPaths) { Write-Warning 'Windows Terminal settings not found. Open Windows Terminal once, then re-run.'; return }
+
+$state = if (Test-Path $SR.State) { Get-Content $SR.State -Raw | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
 
 foreach ($wp in $wtPaths) {
     $w = Get-Content $wp -Raw | ConvertFrom-Json -AsHashtable
+
+    # Remember the user's own settings once (not ours from a previous install)
+    if (-not $state.Contains($wp)) {
+        $state[$wp] = [ordered]@{
+            startupActions        = if ($w.startupActions -notmatch 'session-tracker') { $w.startupActions } else { $null }
+            firstWindowPreference = $w.firstWindowPreference
+        }
+        if ($w.startupActions -and $w.startupActions -notmatch 'session-tracker') {
+            Write-Warning "Replacing your startupActions ('$($w.startupActions)'); uninstall.ps1 restores it."
+        }
+        if ($w.firstWindowPreference -eq 'persistedWindowLayout') {
+            Write-Warning "Turning off 'reopen previous session' (it would duplicate restored tabs); uninstall.ps1 restores it."
+        }
+    }
+
     if ($w.profiles -is [System.Collections.IList]) { $w.profiles = [ordered]@{ list = $w.profiles } }
-    $ours = $G.Values
-    $list = @($w.profiles.list | Where-Object { $_.guid -notin $ours })
-    $list += [ordered]@{ guid = $G.Last; name = 'Restore Last Claude Session'; icon = $icon; hidden = $false
+    $list = @($w.profiles.list | Where-Object { $_.guid -notin $SR.Guids })
+    $list += [ordered]@{ guid = $SR.GuidLast; name = 'Restore Last Claude Session'; icon = $icon; hidden = $false
                          commandline = "pwsh -NoProfile -NoExit -File `"$restore`" -Last"; startingDirectory = '%USERPROFILE%' }
-    $list += [ordered]@{ guid = $G.All; name = 'Restore All Claude Sessions'; icon = $icon; hidden = $false
+    $list += [ordered]@{ guid = $SR.GuidAll; name = 'Restore All Claude Sessions'; icon = $icon; hidden = $false
                          commandline = "pwsh -NoProfile -NoExit -File `"$restore`" -All -UseTab"; startingDirectory = '%USERPROFILE%' }
-    $list += [ordered]@{ guid = $G.Session; name = 'Claude Session'; icon = $icon; hidden = $true
+    $list += [ordered]@{ guid = $SR.GuidSession; name = 'Claude Session'; icon = $icon; hidden = $true
                          commandline = 'pwsh -NoExit'; startingDirectory = '%USERPROFILE%' }
     $w.profiles.list = $list
-    # Restore on app launch only (not when clicking +), in a tab of the default profile
+    # Restore on app launch only (not when clicking +), in a tab styled as the default profile
     $def = if ($w.defaultProfile) { $w.defaultProfile } else { 'PowerShell' }
     $w.startupActions = "nt -p `"$def`" pwsh -NoExit -File `"$restore`" -UseTab"
     if ($w.firstWindowPreference -eq 'persistedWindowLayout') { $w.Remove('firstWindowPreference') }
     Save-Json $w $wp
     Write-Host "Terminal -> $wp"
 }
+$state | ConvertTo-Json -Depth 8 | Set-Content $SR.State -Encoding utf8
 
 Write-Host "`nInstalled. Restart Windows Terminal. Sessions started from now on are tracked." -ForegroundColor Green

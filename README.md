@@ -15,7 +15,7 @@ Reopens your Claude Code sessions in Windows Terminal after a crash, in their or
 
 ## Requirements
 
-Windows, Windows Terminal, PowerShell 7 (`pwsh`), Claude Code.
+Windows, Windows Terminal, PowerShell 7 (`pwsh`), Claude Code (native or npm install).
 
 ## Install
 
@@ -26,7 +26,9 @@ pwsh -File claude-session-restore\install.ps1
 
 Restart Windows Terminal. Re-run `install.ps1` to update.
 
-Both `~/.claude/settings.json` and the Windows Terminal `settings.json` are backed up to `settings.json.bak` before changes. Note: the Windows Terminal settings file is rewritten, so comments in it are dropped.
+Before the first change, `~/.claude/settings.json` and the Windows Terminal `settings.json` are backed up once to `settings.json.pre-session-restore.bak` (plus a rolling `settings.json.bak` on every run).
+
+Install replaces Windows Terminal's `startupActions` and turns off "reopen previous session" (it would duplicate restored tabs). It warns when it does, and `uninstall.ps1` puts your originals back. The Windows Terminal settings file is rewritten, so comments in it are dropped.
 
 ## Uninstall
 
@@ -38,6 +40,7 @@ pwsh -File claude-session-restore\uninstall.ps1            # -KeepData to keep ~
 
 | Path | Purpose |
 |---|---|
+| `src/common.ps1` | Shared paths, profile GUIDs, helpers |
 | `src/hook.ps1` | Hook: registers session on start, removes on clean exit |
 | `src/restore.ps1` | Restores crashed sessions (`-List`, `-Last`, `-All`, `-UseTab`, `-Hours N`) |
 | `src/claude.png` | Profile/tab icon |

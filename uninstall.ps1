@@ -1,16 +1,10 @@
 #Requires -Version 7
-# Removes Claude session restore: hooks, Windows Terminal profiles + startup action, and the scripts/data folder.
+# Removes Claude session restore: hooks, Windows Terminal profiles + startup action (restoring the user's
+# originals), and the scripts/data folder.
 #   uninstall.ps1 -KeepData   leave ~/.claude/session-tracker in place
 param([switch]$KeepData)
 $ErrorActionPreference = 'Stop'
-
-$dest = Join-Path $HOME '.claude\session-tracker'
-$ours = '{2f6c8e1a-9b4d-4c7e-a3f5-6d1b8c9e0a24}', '{8a3d5f7b-1c2e-4b9a-8f6d-3e7c1a5b9d02}', '{c1a0de5e-5e55-4d0a-9c1a-0de5e55e0001}'
-
-function Save-Json($obj, $path) {
-    Copy-Item $path "$path.bak" -Force -ErrorAction SilentlyContinue
-    $obj | ConvertTo-Json -Depth 32 | Set-Content $path -Encoding utf8
-}
+. "$PSScriptRoot\src\common.ps1"
 
 # Claude Code hooks
 $cs = Join-Path $HOME '.claude\settings.json'
@@ -26,18 +20,19 @@ if (Test-Path $cs) {
 }
 
 # Windows Terminal
-$wtPaths = @(
-    "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
-    "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json",
-    "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
-) | Where-Object { Test-Path $_ }
-foreach ($wp in $wtPaths) {
+$state = if (Test-Path $SR.State) { Get-Content $SR.State -Raw | ConvertFrom-Json -AsHashtable } else { @{} }
+foreach ($wp in Get-WtSettingsPaths) {
     $w = Get-Content $wp -Raw | ConvertFrom-Json -AsHashtable
-    if ($w.profiles.list) { $w.profiles.list = @($w.profiles.list | Where-Object { $_.guid -notin $ours }) }
+    if ($w.profiles.list) { $w.profiles.list = @($w.profiles.list | Where-Object { $_.guid -notin $SR.Guids }) }
     if ($w.startupActions -match 'session-tracker') { $w.Remove('startupActions') }
+    $orig = $state[$wp]
+    if ($orig) {
+        if ($orig.startupActions) { $w.startupActions = $orig.startupActions }
+        if ($orig.firstWindowPreference -and -not $w.firstWindowPreference) { $w.firstWindowPreference = $orig.firstWindowPreference }
+    }
     Save-Json $w $wp
     Write-Host "Profiles removed <- $wp"
 }
 
-if (-not $KeepData -and (Test-Path $dest)) { Remove-Item $dest -Recurse -Force; Write-Host "Deleted          <- $dest" }
+if (-not $KeepData -and (Test-Path $SR.Root)) { Remove-Item $SR.Root -Recurse -Force; Write-Host "Deleted          <- $($SR.Root)" }
 Write-Host "`nUninstalled. Restart Windows Terminal." -ForegroundColor Green
