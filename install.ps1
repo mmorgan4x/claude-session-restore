@@ -128,9 +128,12 @@ foreach ($wp in $wtPaths) {
         [ordered]@{ type = 'profile'; profile = $SR.GuidNew }
         [ordered]@{ type = 'profile'; profile = $SR.GuidResume }
         [ordered]@{ type = 'profile'; profile = $SR.GuidAll }
-        [ordered]@{ type = 'separator' }
-        [ordered]@{ type = 'remainingProfiles' }
     )
+    # Separator + the rest only if other visible profiles exist; otherwise it doubles up with WT's own
+    # separator above Settings
+    $defGuid = ($list | Where-Object { $_.guid -eq $def -or $_.name -eq $def } | Select-Object -First 1).guid
+    $others = @($list | Where-Object { -not $_.hidden -and $_.guid -ne $defGuid -and $_.guid -notin $SR.Guids })
+    if ($others) { $w.newTabMenu += [ordered]@{ type = 'separator' }, [ordered]@{ type = 'remainingProfiles' } }
     if ($w.firstWindowPreference -eq 'persistedWindowLayout') { $w.Remove('firstWindowPreference') }
     Save-Json $w $wp
     Write-Host "Terminal -> $wp"
