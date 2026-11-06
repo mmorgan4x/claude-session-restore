@@ -15,6 +15,13 @@ New-Item -ItemType Directory -Force $dest | Out-Null
 Copy-Item (Join-Path $PSScriptRoot 'src\*') $dest -Force
 Write-Host "Scripts  -> $dest"
 
+# Icon: copied from the installed Claude Desktop app (not shipped in this repo). Re-run install to refresh.
+$pkg = Get-AppxPackage -Name 'Claude' -ErrorAction SilentlyContinue | Select-Object -First 1
+$logo = if ($pkg) { Get-ChildItem (Join-Path $pkg.InstallLocation 'assets') -Filter 'Square44x44Logo.targetsize-*_altform-unplated.png' -ErrorAction SilentlyContinue |
+                    Sort-Object { [int]($_.Name -replace '.*targetsize-(\d+)_.*', '$1') } | Where-Object { $_.Name -match 'targetsize-(32|48|64)_' } | Select-Object -Last 1 }
+if ($logo) { Copy-Item $logo.FullName $icon -Force; Write-Host "Icon     -> $icon" }
+elseif (-not (Test-Path $icon)) { $icon = $null; Write-Warning 'Claude Desktop not found; profiles will use the default icon.' }
+
 # 2. Claude Code hooks (~/.claude/settings.json)
 $cs = Join-Path $HOME '.claude\settings.json'
 $s  = if (Test-Path $cs) { Get-Content $cs -Raw | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
@@ -61,6 +68,7 @@ foreach ($wp in $wtPaths) {
                          commandline = "pwsh -NoProfile -NoExit -File `"$restore`" -All -UseTab"; startingDirectory = '%USERPROFILE%' }
     $list += [ordered]@{ guid = $SR.GuidSession; name = 'Claude Session'; icon = $icon; hidden = $true
                          commandline = 'pwsh -NoExit'; startingDirectory = '%USERPROFILE%' }
+    if (-not $icon) { $list | Where-Object { $_.guid -in $SR.Guids } | ForEach-Object { $_.Remove('icon') } }
     $w.profiles.list = $list
     # Restore on app launch only (not when clicking +), in a tab styled as the default profile
     $def = if ($w.defaultProfile) { $w.defaultProfile } else { 'PowerShell' }

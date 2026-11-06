@@ -43,5 +43,7 @@ pwsh -File claude-session-restore\uninstall.ps1            # -KeepData to keep ~
 | `src/common.ps1` | Shared paths, profile GUIDs, helpers |
 | `src/hook.ps1` | Hook: registers session on start, removes on clean exit |
 | `src/restore.ps1` | Restores crashed sessions (`-List`, `-Last`, `-All`, `-UseTab`, `-Hours N`) |
-| `src/claude.png` | Profile/tab icon |
 | `install.ps1` / `uninstall.ps1` | Setup |
+
+The profile icon is copied from your installed Claude Desktop app at install time (re-run `install.ps1` to refresh). Without Claude Desktop, the profiles use the default icon.
+
