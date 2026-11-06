@@ -33,14 +33,20 @@ try {
         try { $s = Get-Content $f.FullName -Raw | ConvertFrom-Json -ErrorAction Stop; if (-not $s.sessionId) { throw } }
         catch { if ($f.LastWriteTime -lt (Get-Date).AddMinutes(-1)) { Remove-Item $f.FullName -Force }; continue }
         $alive = Test-SessionAlive $s
+        # Alive but its Windows Terminal is gone: WT was killed and this Claude process is an invisible orphan
+        # that lingers for a few seconds. Treat it as lost: stop it (so it can't run alongside the restored copy)
+        # and restore it.
+        if ($alive -and $s.wtPid -and -not (Test-WtAlive $s) -and -not $List) {
+            Stop-Process -Id $s.pid -Force -ErrorAction SilentlyContinue
+            Wait-Process -Id $s.pid -Timeout 3 -ErrorAction SilentlyContinue   # gone before the already-open check below
+            Write-SrLog 'restore' $s.sessionId "orphaned (terminal gone, pid $($s.pid) still running) -> stopped, restoring"
+            $alive = $false
+        }
         # Dead but its Windows Terminal is still running: only the tab was closed (tabclose-check.ps1 may not
         # have run yet) -> intentional, forget it
-        if (-not $alive -and $s.wtPid) {
-            $wt = Get-Process -Id $s.wtPid -ErrorAction SilentlyContinue
-            if ($wt -and [math]::Abs(([DateTimeOffset]$wt.StartTime).ToUnixTimeSeconds() - $s.wtStart) -le 5) {
-                if (-not $List) { Remove-Item $f.FullName -Force; Write-SrLog 'restore' $s.sessionId 'tab was closed, terminal still running -> forgotten' }
-                continue
-            }
+        elseif (-not $alive -and (Test-WtAlive $s)) {
+            if (-not $List) { Remove-Item $f.FullName -Force; Write-SrLog 'restore' $s.sessionId 'tab was closed, terminal still running -> forgotten' }
+            continue
         }
         $hasTranscript = $s.transcript -and (Test-Path -LiteralPath $s.transcript)
         # Dead session that never got a message: nothing to resume, drop it

@@ -13,13 +13,19 @@ $file = Join-Path $dir "$($data.session_id).json"
 
 if ($Event -eq 'end') {
     $clean = $data.reason -in 'prompt_input_exit', 'clear', 'logout'
+    # The entry may belong to another copy of this session (reopened elsewhere); only touch our own
+    $s  = Get-Content $file -Raw | ConvertFrom-Json
+    $me = Get-OwningClaude
+    if ($s -and $me -and $s.pid -ne $me.ProcessId) {
+        Write-SrLog 'end' $data.session_id "reason=$($data.reason) from pid $($me.ProcessId); entry belongs to pid $($s.pid) -> left alone"
+        exit 0
+    }
     Write-SrLog 'end' $data.session_id "reason=$($data.reason)$(if ($clean) { ' -> forgotten' } else { ' -> checking' })"
     # Explicit quit: remove now
     if ($clean) { Remove-Item $file -Force; exit 0 }
     # Otherwise the console is closing: either one tab was closed (Windows Terminal keeps running -> intentional,
     # like closing a Chrome tab) or the whole window closed / crashed (WT exits -> keep for restore).
     # Decide a few seconds later from a detached process, since this one dies with the console.
-    $s = Get-Content $file -Raw | ConvertFrom-Json
     if ($s.wtPid) {
         Start-Process pwsh -WindowStyle Hidden -ArgumentList @(
             '-NoProfile', '-NonInteractive', '-File', "`"$PSScriptRoot\tabclose-check.ps1`"",
@@ -31,16 +37,10 @@ if ($Event -eq 'end') {
 # Only track sessions running inside Windows Terminal (skip Desktop app, IDEs, etc.)
 if (-not $env:WT_SESSION) { exit 0 }
 
-# Walk up the process tree to the owning Claude Code process (native claude.exe, or node.exe for npm installs)
-$p = Get-CimInstance Win32_Process -Filter "ProcessId=$PID"
-$claude = $null
-for ($i = 0; $i -lt 12 -and $p; $i++) {
-    if ($p.Name -like 'claude*' -or ($p.Name -eq 'node.exe' -and $p.CommandLine -match 'claude')) { $claude = $p; break }
-    $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.ParentProcessId)"
-}
+$claude = Get-OwningClaude
 if (-not $claude) { exit 0 }
 # Keep walking to the hosting Windows Terminal process (used to tell tab-close from window-close/crash)
-$wt = $p
+$wt = $claude
 for ($i = 0; $i -lt 12 -and $wt -and $wt.Name -ne 'WindowsTerminal.exe'; $i++) {
     $wt = Get-CimInstance Win32_Process -Filter "ProcessId=$($wt.ParentProcessId)"
 }

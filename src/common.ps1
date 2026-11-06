@@ -58,6 +58,24 @@ function Test-SessionAlive($s) {
     [bool]($p -and [math]::Abs(([DateTimeOffset]$p.StartTime).ToUnixTimeSeconds() - $s.pidStart) -le 5)
 }
 
+# True if the Windows Terminal process that hosted a session entry is still running
+function Test-WtAlive($s) {
+    if (-not $s.wtPid) { return $false }
+    $p = Get-Process -Id $s.wtPid -ErrorAction SilentlyContinue
+    [bool]($p -and [math]::Abs(([DateTimeOffset]$p.StartTime).ToUnixTimeSeconds() - $s.wtStart) -le 5)
+}
+
+# The Claude Code process this hook runs under (native claude.exe, or node.exe for npm installs), plus the
+# process the walk stopped at so the caller can keep walking up to Windows Terminal
+function Get-OwningClaude {
+    $p = Get-CimInstance Win32_Process -Filter "ProcessId=$PID"
+    for ($i = 0; $i -lt 12 -and $p; $i++) {
+        if ($p.Name -like 'claude*' -or ($p.Name -eq 'node.exe' -and $p.CommandLine -match 'claude')) { return $p }
+        $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.ParentProcessId)"
+    }
+    $null
+}
+
 # Housekeeping (run from the SessionStart hook): orphaned .seq files and cap events.log.
 # Lost sessions themselves are never removed automatically.
 function Invoke-SrHousekeeping {
