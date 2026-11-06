@@ -7,11 +7,16 @@
 #
 # -AutoRestore on|off   restore crashed sessions when Windows Terminal starts (default on; omitted keeps the current choice)
 #   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mmorgan4x/claude-session-restore/main/install.ps1))) -AutoRestore off
+# -StartIn <folder>     starting folder for Claude: New / Claude: Resume (omitted keeps whatever the profiles have)
+#
 # No [ValidateSet] here: under `irm | iex` the param block runs as a plain statement and the attribute
 # throws on the empty value. Validated by hand instead.
-param([string]$AutoRestore)
+param([string]$AutoRestore, [string]$StartIn)
 if ($AutoRestore -and $AutoRestore -notin 'on', 'off') {
     Write-Host "-AutoRestore must be 'on' or 'off' (got '$AutoRestore')" -ForegroundColor Red; return
+}
+if ($StartIn -and -not (Test-Path -LiteralPath $StartIn -PathType Container)) {
+    Write-Host "-StartIn folder not found: $StartIn" -ForegroundColor Red; return
 }
 
 # Bootstrap: when piped through iex there is no repo on disk, so download it and run from there with pwsh 7
@@ -26,7 +31,7 @@ if (-not $PSScriptRoot -or -not (Test-Path (Join-Path $PSScriptRoot 'src\common.
             $ProgressPreference = 'SilentlyContinue'
             Invoke-WebRequest 'https://github.com/mmorgan4x/claude-session-restore/archive/refs/heads/main.zip' -OutFile "$tmp\repo.zip" -UseBasicParsing
             Expand-Archive "$tmp\repo.zip" $tmp
-            $fwd = if ($AutoRestore) { @('-AutoRestore', $AutoRestore) } else { @() }
+            $fwd = @(); if ($AutoRestore) { $fwd += '-AutoRestore', $AutoRestore }; if ($StartIn) { $fwd += '-StartIn', $StartIn }
             pwsh -NoProfile -File "$tmp\claude-session-restore-main\install.ps1" @fwd
             if ($LASTEXITCODE) { Write-Error "claude-session-restore: install failed (exit code $LASTEXITCODE)." }
         } finally { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
@@ -159,6 +164,7 @@ foreach ($wp in $wtPaths) {
     foreach ($p in $ours) {
         $prof = if ($existing[$p.guid]) { $existing[$p.guid] } else { [ordered]@{ guid = $p.guid; startingDirectory = '%USERPROFILE%' } }
         foreach ($k in 'name', 'hidden', 'commandline') { $prof[$k] = $p[$k] }
+        if ($StartIn -and $p.guid -in $SR.GuidNew, $SR.GuidResume) { $prof.startingDirectory = $StartIn }
         if ($icon) { $prof.icon = $icon } else { $prof.Remove('icon') }
         $list += $prof
     }
