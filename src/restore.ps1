@@ -34,14 +34,10 @@ try {
         catch { if ($f.LastWriteTime -lt (Get-Date).AddMinutes(-1)) { Remove-Item $f.FullName -Force }; continue }
         $alive = Test-SessionAlive $s
         # Alive but its Windows Terminal is gone: WT was killed and this Claude process is an invisible orphan
-        # that lingers for a few seconds. Treat it as lost: stop it (so it can't run alongside the restored copy)
-        # and restore it.
-        if ($alive -and $s.wtPid -and -not (Test-WtAlive $s) -and -not $List) {
-            Stop-Process -Id $s.pid -Force -ErrorAction SilentlyContinue
-            Wait-Process -Id $s.pid -Timeout 3 -ErrorAction SilentlyContinue   # gone before the already-open check below
-            Write-SrLog 'restore' $s.sessionId "orphaned (terminal gone, pid $($s.pid) still running) -> stopped, restoring"
-            $alive = $false
-        }
+        # that lingers for a few seconds. Treat it as lost; it's stopped only right before it is reopened.
+        # (wtPid is recorded only when Claude runs directly in a WT shell, so apps launched from WT are safe.)
+        $orphan = $alive -and $s.wtPid -and -not (Test-WtAlive $s)
+        if ($orphan) { $alive = $false }
         # Dead but its Windows Terminal is still running: only the tab was closed (tabclose-check.ps1 may not
         # have run yet) -> intentional, forget it
         elseif (-not $alive -and (Test-WtAlive $s)) {
@@ -50,18 +46,25 @@ try {
         }
         $hasTranscript = $s.transcript -and (Test-Path -LiteralPath $s.transcript)
         # Dead session that never got a message: nothing to resume, drop it
-        if (-not $alive -and -not $hasTranscript -and -not $List) { Remove-Item $f.FullName -Force; Write-SrLog 'restore' $s.sessionId 'no messages -> dropped'; continue }
+        if (-not $alive -and -not $orphan -and -not $hasTranscript -and -not $List) { Remove-Item $f.FullName -Force; Write-SrLog 'restore' $s.sessionId 'no messages -> dropped'; continue }
         $lastActive = if ($hasTranscript) { (Get-Item -LiteralPath $s.transcript).LastWriteTime }
                 else { [DateTimeOffset]::FromUnixTimeSeconds($s.started).LocalDateTime }
         # Only read transcripts we might show or restore
         $name = if ($hasTranscript -and ($List -or -not $alive)) { Get-SessionName $s.transcript } else { '' }
-        [pscustomobject]@{ File = $f.FullName; Id = $s.sessionId; Name = $name; Cwd = $s.cwd; Last = $lastActive; Started = [long]$s.started; Alive = $alive }
+        [pscustomobject]@{ File = $f.FullName; Id = $s.sessionId; Name = $name; Cwd = $s.cwd; Last = $lastActive; Started = [long]$s.started
+                           Alive = $alive; Orphan = [bool]$orphan; Pid = $s.pid; HasTranscript = [bool]$hasTranscript }
     }
 
     if ($List) {
-        $sessions | Sort-Object Last -Descending | Format-Table @{n='State';e={ if ($_.Alive) {'open'} else {'dead'} }}, Last, Name, Cwd, Id -AutoSize
+        $sessions | Sort-Object Last -Descending |
+            Format-Table @{n='State';e={ if ($_.Orphan) {'orphan'} elseif ($_.Alive) {'open'} else {'dead'} }}, Last, Name, Cwd, Id -AutoSize
         return
     }
+
+    # Orphan that never got a message: nothing to resume (it dies with its console anyway)
+    $sessions = @($sessions | Where-Object {
+        if ($_.Orphan -and -not $_.HasTranscript) { Remove-Item $_.File -Force; Write-SrLog 'restore' $_.Id 'orphan with no messages -> dropped'; $false } else { $true }
+    })
 
     # Sort by original start time = the order the tabs were opened (left to right)
     $dead = @($sessions | Where-Object { -not $_.Alive } | Sort-Object Started)
@@ -71,7 +74,10 @@ try {
     if ($dead) {
         $running = Get-RunningSessionIds
         $dead = @($dead | Where-Object {
-            if ($running.ContainsKey($_.Id)) { Write-SrLog 'restore' $_.Id "already open (pid $($running[$_.Id])) -> skipped"; $false } else { $true }
+            # (an orphan's own process doesn't count: it's stopped right before reopening)
+            if ($running.ContainsKey($_.Id) -and -not ($_.Orphan -and $running[$_.Id] -eq $_.Pid)) {
+                Write-SrLog 'restore' $_.Id "already open (pid $($running[$_.Id])) -> skipped"; $false
+            } else { $true }
         })
     }
 
@@ -89,15 +95,28 @@ try {
         else { $old | ForEach-Object { Remove-Item $_.File -Force; Write-SrLog 'restore' $_.Id 'older than cutoff, declined -> forgotten' } }
     }
 
-    $recent = @($recent | Sort-Object Started)
+    # Folder missing (unmounted drive, VPN share): keep the entry so it can restore later
+    $recent = @($recent | Sort-Object Started | Where-Object {
+        if (Test-Path -LiteralPath $_.Cwd) { return $true }
+        Write-Host "Claude: folder not found, kept for later: $($_.Cwd)" -ForegroundColor Red
+        Write-SrLog 'restore' $_.Id "folder not found ($($_.Cwd)) -> kept"; $false
+    })
+
+    # Only now, for orphans that will really be reopened: stop them with their process tree (all at once,
+    # one wait). Any that refuse to die are skipped so two copies never run.
+    $orphans = @($recent | Where-Object Orphan)
+    if ($orphans) {
+        $stuck = Stop-ClaudeTree @($orphans.Pid)
+        foreach ($o in $orphans) {
+            if ($o.Pid -in $stuck) { Write-SrLog 'restore' $o.Id "orphan pid $($o.Pid) could not be stopped -> skipped, kept" }
+            else { Write-SrLog 'restore' $o.Id "orphan pid $($o.Pid) (terminal gone) -> stopped with its process tree" }
+        }
+        $recent = @($recent | Where-Object { -not ($_.Orphan -and $_.Pid -in $stuck) })
+    }
+
     $count = 0
     $tabs = @()
     foreach ($s in $recent) {
-        # Folder missing (unmounted drive, VPN share): keep the entry so it can restore later
-        if (-not (Test-Path -LiteralPath $s.Cwd)) {
-            Write-Host "Claude: folder not found, kept for later: $($s.Cwd)" -ForegroundColor Red
-            Write-SrLog 'restore' $s.Id "folder not found ($($s.Cwd)) -> kept"; continue
-        }
         Remove-Item $s.File -Force   # re-registers itself when it starts
         Write-SrLog 'restore' $s.Id "reopened via ${trigger}: $($s.Name)"
         # keep original start time so tab order survives repeated restores

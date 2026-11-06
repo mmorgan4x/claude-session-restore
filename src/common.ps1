@@ -65,15 +65,37 @@ function Test-WtAlive($s) {
     [bool]($p -and [math]::Abs(([DateTimeOffset]$p.StartTime).ToUnixTimeSeconds() - $s.wtStart) -le 5)
 }
 
-# The Claude Code process this hook runs under (native claude.exe, or node.exe for npm installs), plus the
-# process the walk stopped at so the caller can keep walking up to Windows Terminal
+# The Claude Code process this hook runs under (native claude.exe, or node.exe for npm installs), or $null.
+# Uses Process.Parent (fast) rather than CIM: the SessionEnd hook runs while the console is closing.
 function Get-OwningClaude {
-    $p = Get-CimInstance Win32_Process -Filter "ProcessId=$PID"
+    $p = Get-Process -Id $PID
     for ($i = 0; $i -lt 12 -and $p; $i++) {
-        if ($p.Name -like 'claude*' -or ($p.Name -eq 'node.exe' -and $p.CommandLine -match 'claude')) { return $p }
-        $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.ParentProcessId)"
+        if ($p.ProcessName -like 'claude*' -or ($p.ProcessName -eq 'node' -and $p.CommandLine -match 'claude')) { return $p }
+        $p = $p.Parent
     }
     $null
+}
+
+# The Windows Terminal process directly hosting $claude, or $null. Only shells/console hosts may sit in
+# between: if Claude runs inside another app launched from a WT tab (VS Code, a new console window), that app
+# owns it and WT closing must not make it look orphaned.
+function Get-WtHost($claude) {
+    $shells = 'pwsh', 'powershell', 'cmd', 'bash', 'sh', 'zsh', 'wsl', 'OpenConsole', 'conhost'
+    $p = $claude.Parent
+    for ($i = 0; $i -lt 8 -and $p; $i++) {
+        if ($p.ProcessName -eq 'WindowsTerminal') { return $p }
+        if ($p.ProcessName -notin $shells) { return $null }
+        $p = $p.Parent
+    }
+    $null
+}
+
+# Stop orphaned Claude processes with their whole tree (MCP servers, dev servers, shells), wait for them once,
+# and return the pids that are still running
+function Stop-ClaudeTree([int[]]$Pids) {
+    foreach ($id in $Pids) { & taskkill.exe /T /F /PID $id 2>&1 | Out-Null }
+    Wait-Process -Id $Pids -Timeout 3 -ErrorAction SilentlyContinue
+    @($Pids | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
 }
 
 # Housekeeping (run from the SessionStart hook): orphaned .seq files and cap events.log.

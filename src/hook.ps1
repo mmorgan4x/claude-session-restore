@@ -14,10 +14,11 @@ $file = Join-Path $dir "$($data.session_id).json"
 if ($Event -eq 'end') {
     $clean = $data.reason -in 'prompt_input_exit', 'clear', 'logout'
     # The entry may belong to another copy of this session (reopened elsewhere); only touch our own
+    # (can't tell who we are -> don't touch it either)
     $s  = Get-Content $file -Raw | ConvertFrom-Json
     $me = Get-OwningClaude
-    if ($s -and $me -and $s.pid -ne $me.ProcessId) {
-        Write-SrLog 'end' $data.session_id "reason=$($data.reason) from pid $($me.ProcessId); entry belongs to pid $($s.pid) -> left alone"
+    if ($s -and (-not $me -or $s.pid -ne $me.Id)) {
+        Write-SrLog 'end' $data.session_id "reason=$($data.reason) from pid $(if ($me) { $me.Id } else { '?' }); entry belongs to pid $($s.pid) -> left alone"
         exit 0
     }
     Write-SrLog 'end' $data.session_id "reason=$($data.reason)$(if ($clean) { ' -> forgotten' } else { ' -> checking' })"
@@ -39,17 +40,14 @@ if (-not $env:WT_SESSION) { exit 0 }
 
 $claude = Get-OwningClaude
 if (-not $claude) { exit 0 }
-# Keep walking to the hosting Windows Terminal process (used to tell tab-close from window-close/crash)
-$wt = $claude
-for ($i = 0; $i -lt 12 -and $wt -and $wt.Name -ne 'WindowsTerminal.exe'; $i++) {
-    $wt = Get-CimInstance Win32_Process -Filter "ProcessId=$($wt.ParentProcessId)"
-}
+# Hosting Windows Terminal (tells tab-close from window-close/crash); $null if another app sits in between
+$wt = Get-WtHost $claude
 
 New-Item -ItemType Directory -Force $dir | Out-Null
 # Same session already running in another Claude process? (two copies would diverge and both keep working)
 $prev = if (Test-Path $file) { try { Get-Content $file -Raw | ConvertFrom-Json } catch {} }
-$dup = $prev -and $prev.pid -ne $claude.ProcessId -and (Test-SessionAlive $prev)
-Write-SrLog 'start' $data.session_id ("source=$($data.source) pid=$($claude.ProcessId) cwd=$($data.cwd)" +
+$dup = $prev -and $prev.pid -ne $claude.Id -and (Test-SessionAlive $prev)
+Write-SrLog 'start' $data.session_id ("source=$($data.source) pid=$($claude.Id) cwd=$($data.cwd)" + $(if (-not $wt) { ' (not directly in WT)' } else { '' }) +
     $(if ($dup) { " DUPLICATE: already running as pid $($prev.pid)" } else { '' }))
 # Restored session: keep its original start time (tab order)
 $seq = Join-Path $dir "$($data.session_id).seq"
@@ -59,11 +57,11 @@ if (Test-Path $seq) { $started = [long](Get-Content $seq -Raw); Remove-Item $seq
     sessionId  = $data.session_id
     cwd        = $data.cwd
     transcript = $data.transcript_path
-    pid        = $claude.ProcessId
-    pidStart   = ([DateTimeOffset]$claude.CreationDate).ToUnixTimeSeconds()
+    pid        = $claude.Id
+    pidStart   = ([DateTimeOffset]$claude.StartTime).ToUnixTimeSeconds()
     started    = $started
-    wtPid      = if ($wt) { $wt.ProcessId } else { $null }
-    wtStart    = if ($wt) { ([DateTimeOffset]$wt.CreationDate).ToUnixTimeSeconds() } else { $null }
+    wtPid      = if ($wt) { $wt.Id } else { $null }
+    wtStart    = if ($wt) { ([DateTimeOffset]$wt.StartTime).ToUnixTimeSeconds() } else { $null }
 } | ConvertTo-Json | Set-Content "$file.tmp" -Encoding utf8
 # Atomic replace so restore.ps1 never reads a half-written file
 Move-Item "$file.tmp" $file -Force

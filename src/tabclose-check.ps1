@@ -6,8 +6,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 . "$PSScriptRoot\common.ps1"
 
 Start-Sleep -Seconds 4
-$wt = Get-Process -Id $WtPid
-$alive = $wt -and [math]::Abs(([DateTimeOffset]$wt.StartTime).ToUnixTimeSeconds() - $WtStart) -le 5
+$alive = Test-WtAlive @{ wtPid = $WtPid; wtStart = $WtStart }
 $id = [IO.Path]::GetFileNameWithoutExtension($SessionFile)
 # Session reopened meanwhile (new Claude process re-registered it): leave the new entry alone
 $cur = Get-Content $SessionFile -Raw | ConvertFrom-Json
