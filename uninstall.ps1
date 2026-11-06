@@ -1,8 +1,8 @@
 #Requires -Version 7
 # Removes Claude session restore: hooks, Windows Terminal profiles + startup action (restoring the user's
 # originals), and the scripts/data folder.
-#   uninstall.ps1 -KeepData   leave ~/.claude/session-tracker in place
-# Runs from the repo or from the installed copy (~/.claude/session-tracker/uninstall.ps1).
+#   uninstall.ps1 -KeepData   leave ~/.claude/session-restore in place
+# Runs from the repo or from the installed copy (~/.claude/session-restore/uninstall.ps1).
 param([switch]$KeepData)
 $ErrorActionPreference = 'Stop'
 $common = @("$PSScriptRoot\src\common.ps1", "$PSScriptRoot\common.ps1") | Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -14,7 +14,7 @@ if (Test-Path $cs) {
     $s = Get-Content $cs -Raw | ConvertFrom-Json -AsHashtable
     foreach ($ev in $SR.HookEvents.Keys) {
         if (-not $s.hooks -or -not $s.hooks[$ev]) { continue }
-        $list = @($s.hooks[$ev] | Where-Object { -not ($_.hooks.command -match 'session-tracker/hook\.ps1') })
+        $list = @($s.hooks[$ev] | Where-Object { -not ($_.hooks.command -match 'session-restore/hook\.ps1') })
         if ($list) { $s.hooks[$ev] = $list } else { $s.hooks.Remove($ev) }
     }
     Save-Json $s $cs
@@ -26,7 +26,7 @@ $state = if (Test-Path $SR.State) { Get-Content $SR.State -Raw | ConvertFrom-Jso
 foreach ($wp in Get-WtSettingsPaths) {
     $w = Get-Content $wp -Raw | ConvertFrom-Json -AsHashtable
     if ($w.profiles.list) { $w.profiles.list = @($w.profiles.list | Where-Object { $_.guid -notin $SR.Guids }) }
-    if ($w.startupActions -match 'session-tracker') { $w.Remove('startupActions') }
+    if ($w.startupActions -match 'session-restore') { $w.Remove('startupActions') }
     if (Test-OurNewTabMenu $w.newTabMenu) { $w.Remove('newTabMenu') }
     $orig = $state[$wp]
     if ($orig) {

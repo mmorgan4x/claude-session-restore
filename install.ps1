@@ -63,7 +63,7 @@ $s  = if (Test-Path $cs) { Get-Content $cs -Raw | ConvertFrom-Json -AsHashtable 
 if (-not $s.hooks) { $s.hooks = [ordered]@{} }
 foreach ($ev in $SR.HookEvents.Keys) {
     $arg  = $SR.HookEvents[$ev]
-    $list = @($s.hooks[$ev] | Where-Object { $_ } | Where-Object { -not ($_.hooks.command -match 'session-tracker/hook\.ps1') })
+    $list = @($s.hooks[$ev] | Where-Object { $_ } | Where-Object { -not ($_.hooks.command -match 'session-restore/hook\.ps1') })
     $h = [ordered]@{ type = 'command'; command = "pwsh -NoProfile -NonInteractive -File `"$hookPath`" $arg" }
     # Only SessionEnd runs synchronously (must finish before the process exits); the rest never delay Claude
     if ($ev -ne 'SessionEnd') { $h.async = $true }
@@ -98,7 +98,7 @@ foreach ($wp in $wtPaths) {
     # so changes made after the first install are what uninstall restores.
     if (-not $state.Contains($wp)) { $state[$wp] = [ordered]@{ startupActions = $null; firstWindowPreference = $null; newTabMenu = $null } }
     $st = $state[$wp]
-    if ($w.startupActions -and $w.startupActions -notmatch 'session-tracker') {
+    if ($w.startupActions -and $w.startupActions -notmatch 'session-restore') {
         $st.startupActions = $w.startupActions
         if ($cfg.autoRestore) { Write-Warning "Replacing your startupActions ('$($w.startupActions)'); uninstall.ps1 restores it." }
     }
@@ -114,7 +114,7 @@ foreach ($wp in $wtPaths) {
     $list += [ordered]@{ guid = $SR.GuidResume; name = 'Claude: Resume'; icon = $icon; hidden = $false
                          commandline = 'pwsh -NoExit -Command claude --resume'; startingDirectory = '%USERPROFILE%' }
     $list += [ordered]@{ guid = $SR.GuidAll; name = 'Claude: Restore Previous Sessions'; icon = $icon; hidden = $false
-                         commandline = "pwsh -NoProfile -NoExit -File `"$restore`" -All -UseTab"; startingDirectory = '%USERPROFILE%' }
+                         commandline = "pwsh -NoProfile -NoExit -File `"$restore`" -All"; startingDirectory = '%USERPROFILE%' }
     $list += [ordered]@{ guid = $SR.GuidSession; name = 'Claude: Session'; icon = $icon; hidden = $true
                          commandline = 'pwsh -NoExit'; startingDirectory = '%USERPROFILE%' }
     if (-not $icon) { $list | Where-Object { $_.guid -in $SR.Guids } | ForEach-Object { $_.Remove('icon') } }
@@ -130,7 +130,7 @@ foreach ($wp in $wtPaths) {
     # Startup restore only when auto-restore is on; off gives the first tab back to the default profile
     if ($cfg.autoRestore) {
         $w.startupActions = "nt -p `"$def`" pwsh -NoExit -File `"$restore`" -Startup"
-    } elseif ($w.startupActions -match 'session-tracker') {
+    } elseif ($w.startupActions -match 'session-restore') {
         if ($st.startupActions) { $w.startupActions = $st.startupActions } else { $w.Remove('startupActions') }
     }
 

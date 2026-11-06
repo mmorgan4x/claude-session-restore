@@ -4,7 +4,7 @@ Reopens your Claude Code sessions in Windows Terminal after a crash, in their or
 
 ## How it works
 
-- **Tracking** – Claude Code `SessionStart`/`SessionEnd` hooks record each session running in Windows Terminal (`~/.claude/session-tracker/sessions/`).
+- **Tracking** – Claude Code `SessionStart`/`SessionEnd` hooks record each session running in Windows Terminal (`~/.claude/session-restore/sessions/`).
 - **Like Chrome:** closing a single tab (X, `/exit`, Ctrl+D) forgets that session. Closing the whole window or a crash keeps all its sessions for restore. (After a non-clean exit, a detached check waits a few seconds: if Windows Terminal is still running, only the tab was closed.)
 - **Restore** – when Windows Terminal starts, your first tab stays a normal shell and each lost session (`claude --resume <id>`) opens in a new tab to its right, named after the session. Focus stays on your first tab. Clicking **+** is untouched.
   - Sessions active in the last 12h restore automatically; older ones prompt y/N.
@@ -35,7 +35,7 @@ Re-run the installer with `-AutoRestore off` (or `on`). Sessions are still track
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mmorgan4x/claude-session-restore/main/install.ps1))) -AutoRestore off
 ```
 
-From a clone: `pwsh -File install.ps1 -AutoRestore off`. The setting lives in `~/.claude/session-tracker/config.json`.
+From a clone: `pwsh -File install.ps1 -AutoRestore off`. The setting lives in `~/.claude/session-restore/config.json`.
 
 
 Before the first change, `~/.claude/settings.json` and the Windows Terminal `settings.json` are backed up once to `settings.json.pre-session-restore.bak` (plus a rolling `settings.json.bak` on every run).
@@ -45,7 +45,7 @@ Install replaces Windows Terminal's `startupActions` and `newTabMenu` (the **+**
 ## Uninstall
 
 ```powershell
-pwsh -File ~/.claude/session-tracker/uninstall.ps1        # -KeepData to keep session data
+pwsh -File ~/.claude/session-restore/uninstall.ps1        # -KeepData to keep session data
 ```
 
 ## Files
@@ -54,8 +54,8 @@ pwsh -File ~/.claude/session-tracker/uninstall.ps1        # -KeepData to keep se
 |---|---|
 | `src/common.ps1` | Shared paths, profile GUIDs, helpers |
 | `src/hook.ps1` | Hook: registers session on start, removes on clean exit |
-| `src/restore.ps1` | Restores crashed sessions (`-List`, `-All`, `-UseTab`, `-Startup`, `-Hours N`) |
-| `src/closecheck.ps1` | Decides tab-close vs window-close/crash after a session ends |
+| `src/restore.ps1` | Restores crashed sessions (`-List`, `-All`, `-Startup`, `-Hours N`) |
+| `src/tabclose-check.ps1` | Decides tab-close vs window-close/crash after a session ends |
 | `install.ps1` / `uninstall.ps1` | Setup |
 
 The profile icon is copied from your installed Claude Desktop app at install time (re-run `install.ps1` to refresh). Without Claude Desktop, the profiles use the default icon.
@@ -69,7 +69,7 @@ The profile icon is copied from your installed Claude Desktop app at install tim
 
 ## Log
 
-`~/.claude/session-tracker/events.log` has one line per session start/end, close check and restore decision (why each session was reopened, kept, skipped or forgotten). A start line marked `DUPLICATE` means the same session was opened in two places.
+`~/.claude/session-restore/events.log` has one line per session start/end, close check and restore decision (why each session was reopened, kept, skipped or forgotten). A start line marked `DUPLICATE` means the same session was opened in two places.
 
 ## License
 

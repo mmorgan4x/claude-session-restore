@@ -1,7 +1,7 @@
 # Shared constants/helpers for install.ps1, uninstall.ps1, hook.ps1, restore.ps1 (dot-sourced).
 
 $SR = @{
-    Root        = Join-Path $HOME '.claude\session-tracker'
+    Root        = Join-Path $HOME '.claude\session-restore'
     # Fixed GUIDs so re-install / uninstall / restore can find our Windows Terminal profiles
     GuidAll     = '{8a3d5f7b-1c2e-4b9a-8f6d-3e7c1a5b9d02}'
     GuidSession = '{c1a0de5e-5e55-4d0a-9c1a-0de5e55e0001}'

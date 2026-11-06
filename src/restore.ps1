@@ -1,14 +1,13 @@
-# Reopens Claude Code sessions that died without a clean exit (crash, closed tab).
+# Reopens Claude Code sessions lost to a window close or crash, each in a new tab (this tab stays a plain shell).
 #   restore.ps1            restore dead sessions active in last 12h; ask about older ones
 #   restore.ps1 -All       restore every dead session without asking
 #   restore.ps1 -List      just list tracked sessions
-#   -UseTab                resume the first session in this tab, rest in new tabs (used by WT startup / restore-all profile)
 #   -Startup               run from Windows Terminal startup; does nothing when autoRestore is off in config.json
-param([switch]$All, [switch]$List, [switch]$UseTab, [switch]$Startup, [int]$Hours = 12)
+param([switch]$All, [switch]$List, [switch]$Startup, [int]$Hours = 12)
 . "$PSScriptRoot\common.ps1"
 
 if ($Startup -and -not (Get-SrConfig).autoRestore) { return }
-$trigger = if ($Startup) { 'startup' } elseif ($All) { 'profile' } else { 'manual' }
+$trigger = if ($Startup) { 'startup' } else { 'profile' }
 
 $root = $SR.Root
 $dir  = $SR.Sessions
@@ -24,13 +23,6 @@ function Get-SessionName($transcript) {
     if ($m) { [regex]::Unescape($m.Matches[0].Groups[2].Value) } else { '' }
 }
 
-function Start-Here($s) {
-    Write-Host "Claude: resuming '$($s.Name)' in $($s.Cwd)" -ForegroundColor Green
-    Set-Location -LiteralPath $s.Cwd
-    $Host.UI.RawUI.WindowTitle = if ($s.Name) { $s.Name } else { Split-Path $s.Cwd -Leaf }
-    claude --resume $s.Id
-}
-
 # Lock so tabs opening at the same time don't both restore
 $lock = $null
 try { $lock = [IO.File]::Open((Join-Path $root 'restore.lock'), 'OpenOrCreate', 'ReadWrite', 'None') } catch { return }
@@ -41,7 +33,7 @@ try {
         try { $s = Get-Content $f.FullName -Raw | ConvertFrom-Json -ErrorAction Stop; if (-not $s.sessionId) { throw } }
         catch { if ($f.LastWriteTime -lt (Get-Date).AddMinutes(-1)) { Remove-Item $f.FullName -Force }; continue }
         $alive = Test-SessionAlive $s
-        # Dead but its Windows Terminal is still running: only the tab was closed (closecheck.ps1 may not
+        # Dead but its Windows Terminal is still running: only the tab was closed (tabclose-check.ps1 may not
         # have run yet) -> intentional, forget it
         if (-not $alive -and $s.wtPid) {
             $wt = Get-Process -Id $s.wtPid -ErrorAction SilentlyContinue
@@ -92,7 +84,6 @@ try {
     }
 
     $recent = @($recent | Sort-Object Started)
-    $here = $null   # session to resume in this tab (with -UseTab)
     $count = 0
     $tabs = @()
     foreach ($s in $recent) {
@@ -102,11 +93,10 @@ try {
             Write-SrLog 'restore' $s.Id "folder not found ($($s.Cwd)) -> kept"; continue
         }
         Remove-Item $s.File -Force   # re-registers itself when it starts
-        Write-SrLog 'restore' $s.Id "reopened via $trigger$(if ($UseTab -and -not $here) { ' (this tab)' }): $($s.Name)"
+        Write-SrLog 'restore' $s.Id "reopened via ${trigger}: $($s.Name)"
         # keep original start time so tab order survives repeated restores
         Set-Content (Join-Path $dir "$($s.Id).seq") $s.Started
         $count++
-        if ($UseTab -and -not $here) { $here = $s; continue }
         $title = if ($s.Name) { $s.Name } else { Split-Path $s.Cwd -Leaf }
         $tabs += "nt -p `"$($SR.GuidSession)`" --title $(ConvertTo-WtArg $title) -d $(ConvertTo-WtArg $s.Cwd) pwsh -NoExit -Command claude --resume $($s.Id)"
     }
@@ -116,9 +106,5 @@ try {
     # one wt call so tabs are created in order
     if ($tabs) { Start-Process wt.exe -ArgumentList ("-w 0 " + ($tabs -join ' ; ')) }
     if ($count) { Write-Host "Claude: restored $count session(s)." -ForegroundColor Green }
-    if ($here) {
-        $lock.Close(); $lock = $null
-        Start-Here $here
-    }
 }
 finally { if ($lock) { $lock.Close() } }
