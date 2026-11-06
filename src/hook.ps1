@@ -11,14 +11,6 @@ if (-not $data.session_id) { exit 0 }
 $dir  = $SR.Sessions
 $file = Join-Path $dir "$($data.session_id).json"
 
-# You typed a prompt: record when (restore focuses the tab you typed in last)
-if ($Event -eq 'prompt') {
-    # Always write (the async start hook may not have registered the session yet); housekeeping drops orphans
-    New-Item -ItemType Directory -Force $dir | Out-Null
-    Set-Content (Join-Path $dir "$($data.session_id).typed") ''
-    exit 0
-}
-
 if ($Event -eq 'end') {
     $clean = $data.reason -in 'prompt_input_exit', 'clear', 'logout'
     Write-SrLog 'end' $data.session_id "reason=$($data.reason)$(if ($clean) { ' -> forgotten' } else { ' -> checking' })"

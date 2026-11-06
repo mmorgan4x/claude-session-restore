@@ -95,7 +95,6 @@ try {
     $here = $null   # session to resume in this tab (with -UseTab)
     $count = 0
     $tabs = @()
-    $opened = @()   # in tab order (left to right): this tab first with -UseTab, then the new tabs
     foreach ($s in $recent) {
         # Folder missing (unmounted drive, VPN share): keep the entry so it can restore later
         if (-not (Test-Path -LiteralPath $s.Cwd)) {
@@ -107,24 +106,14 @@ try {
         # keep original start time so tab order survives repeated restores
         Set-Content (Join-Path $dir "$($s.Id).seq") $s.Started
         $count++
-        $opened += $s
         if ($UseTab -and -not $here) { $here = $s; continue }
         $title = if ($s.Name) { $s.Name } else { Split-Path $s.Cwd -Leaf }
         $tabs += "nt -p `"$($SR.GuidSession)`" --title $(ConvertTo-WtArg $title) -d $(ConvertTo-WtArg $s.Cwd) pwsh -NoExit -Command claude --resume $($s.Id)"
     }
-    # Like Chrome, end on the tab you were using: WT doesn't report the focused tab, so use the session you
-    # last typed in (falls back to last conversation activity). New tabs are appended and the last one gets
-    # focus, so step left from there.
-    if ($tabs) {
-        # Sessions you typed in always beat ones you didn't (conversation activity includes Claude's replies)
-        $typed  = @($opened | Where-Object { Get-LastTyped $_.Id })
-        $target = if ($typed) { $typed | Sort-Object { Get-LastTyped $_.Id } | Select-Object -Last 1 }
-                  else { $opened | Sort-Object Last | Select-Object -Last 1 }
-        $back = ($opened.Count - 1) - [array]::IndexOf($opened, $target)
-        $tabs += @('ft -p') * $back
-        if ($target) { Write-SrLog 'restore' $target.Id "focused (last typed in): $($target.Name)" }
-    }
-    # one wt call so tabs are created (and focused) in order
+    # Stay on the tab you launched from: new tabs are appended after it and the last one takes focus,
+    # so step back once per new tab
+    if ($tabs) { $tabs += @('ft -p') * $tabs.Count }
+    # one wt call so tabs are created in order
     if ($tabs) { Start-Process wt.exe -ArgumentList ("-w 0 " + ($tabs -join ' ; ')) }
     if ($count) { Write-Host "Claude: restored $count session(s)." -ForegroundColor Green }
     if ($here) {

@@ -14,13 +14,7 @@ $SR.State    = Join-Path $SR.Root 'install-state.json'   # user's original WT se
 $SR.Config   = Join-Path $SR.Root 'config.json'          # user options, e.g. { "autoRestore": true }
 $SR.Log      = Join-Path $SR.Root 'events.log'           # one line per start/end/close-check/restore decision
 # Claude Code hook event -> hook.ps1 argument
-$SR.HookEvents = [ordered]@{ SessionStart = 'start'; SessionEnd = 'end'; UserPromptSubmit = 'prompt' }
-
-# When you last typed in a session (sessions\<id>.typed, written by the prompt hook), else $null
-function Get-LastTyped([string]$Id) {
-    $t = Join-Path $SR.Sessions "$Id.typed"
-    if (Test-Path $t) { (Get-Item $t).LastWriteTime } else { $null }
-}
+$SR.HookEvents = [ordered]@{ SessionStart = 'start'; SessionEnd = 'end' }
 
 # Append a timestamped line to events.log: "<time> <event> <session id> <details>"
 function Write-SrLog([string]$Event, [string]$Id = '-', [string]$Detail = '') {
@@ -70,10 +64,6 @@ function Test-SessionAlive($s) {
 function Invoke-SrHousekeeping {
     Get-ChildItem $SR.Sessions -Filter *.seq -ErrorAction SilentlyContinue |
         Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-1) } | Remove-Item -Force
-    # .typed markers whose session is no longer tracked
-    Get-ChildItem $SR.Sessions -Filter *.typed -ErrorAction SilentlyContinue |
-        Where-Object { -not (Test-Path (Join-Path $SR.Sessions "$($_.BaseName).json")) -and $_.LastWriteTime -lt (Get-Date).AddDays(-1) } |
-        Remove-Item -Force
     Remove-Item (Join-Path $SR.Root 'end.log') -Force -ErrorAction SilentlyContinue   # pre-events.log name
     $log = $SR.Log
     if ((Test-Path $log) -and (Get-Item $log).Length -gt 256KB) {
