@@ -41,6 +41,15 @@ try {
             $ps = ([DateTimeOffset]$proc.StartTime).ToUnixTimeSeconds()
             if ([math]::Abs($ps - $s.pidStart) -le 5) { $alive = $true }
         }
+        # Dead but its Windows Terminal is still running: only the tab was closed (closecheck.ps1 may not
+        # have run yet) -> intentional, forget it
+        if (-not $alive -and $s.wtPid) {
+            $wt = Get-Process -Id $s.wtPid -ErrorAction SilentlyContinue
+            if ($wt -and [math]::Abs(([DateTimeOffset]$wt.StartTime).ToUnixTimeSeconds() - $s.wtStart) -le 5) {
+                if (-not $List) { Remove-Item $f.FullName -Force }
+                continue
+            }
+        }
         $hasTranscript = $s.transcript -and (Test-Path -LiteralPath $s.transcript)
         # Dead session that never got a message: nothing to resume, drop it
         if (-not $alive -and -not $hasTranscript -and -not $List) { Remove-Item $f.FullName -Force; continue }
