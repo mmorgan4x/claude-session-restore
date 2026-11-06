@@ -85,6 +85,8 @@ foreach ($wp in $wtPaths) {
 
     if ($w.profiles -is [System.Collections.IList]) { $w.profiles = [ordered]@{ list = $w.profiles } }
     $list = @($w.profiles.list | Where-Object { $_.guid -notin $SR.Guids })
+    $list += [ordered]@{ guid = $SR.GuidNew; name = 'Claude: New'; icon = $icon; hidden = $false
+                         commandline = 'pwsh -NoExit -Command claude'; startingDirectory = '%USERPROFILE%' }
     $list += [ordered]@{ guid = $SR.GuidResume; name = 'Claude: Resume'; icon = $icon; hidden = $false
                          commandline = 'pwsh -NoExit -Command claude --resume'; startingDirectory = '%USERPROFILE%' }
     $list += [ordered]@{ guid = $SR.GuidLast; name = 'Claude: Restore Last Session'; icon = $icon; hidden = $false

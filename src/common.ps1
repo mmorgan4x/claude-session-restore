@@ -7,10 +7,11 @@ $SR = @{
     GuidAll     = '{8a3d5f7b-1c2e-4b9a-8f6d-3e7c1a5b9d02}'
     GuidSession = '{c1a0de5e-5e55-4d0a-9c1a-0de5e55e0001}'
     GuidResume  = '{c1a0de5e-5e55-4d0a-9c1a-0de5e55e0002}'
+    GuidNew     = '{c1a0de5e-5e55-4d0a-9c1a-0de5e55e0003}'
 }
 $SR.Sessions = Join-Path $SR.Root 'sessions'
 $SR.State    = Join-Path $SR.Root 'install-state.json'   # user's original WT settings we replaced
-$SR.Guids    = @($SR.GuidLast, $SR.GuidAll, $SR.GuidSession, $SR.GuidResume)
+$SR.Guids    = @($SR.GuidLast, $SR.GuidAll, $SR.GuidSession, $SR.GuidResume, $SR.GuidNew)
 
 # Windows Terminal settings files that exist (Store, Preview, unpackaged)
 function Get-WtSettingsPaths {
