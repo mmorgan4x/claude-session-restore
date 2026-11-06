@@ -36,13 +36,10 @@ try { $lock = [IO.File]::Open((Join-Path $root 'restore.lock'), 'OpenOrCreate', 
 
 try {
     $sessions = foreach ($f in $files) {
-        try { $s = Get-Content $f.FullName -Raw | ConvertFrom-Json } catch { Remove-Item $f.FullName -Force; continue }
-        $alive = $false
-        $proc = Get-Process -Id $s.pid -ErrorAction SilentlyContinue
-        if ($proc) {
-            $ps = ([DateTimeOffset]$proc.StartTime).ToUnixTimeSeconds()
-            if ([math]::Abs($ps - $s.pidStart) -le 5) { $alive = $true }
-        }
+        # Unreadable: delete only if it's old (a fresh one may be mid-write)
+        try { $s = Get-Content $f.FullName -Raw | ConvertFrom-Json -ErrorAction Stop; if (-not $s.sessionId) { throw } }
+        catch { if ($f.LastWriteTime -lt (Get-Date).AddMinutes(-1)) { Remove-Item $f.FullName -Force }; continue }
+        $alive = Test-SessionAlive $s
         # Dead but its Windows Terminal is still running: only the tab was closed (closecheck.ps1 may not
         # have run yet) -> intentional, forget it
         if (-not $alive -and $s.wtPid) {

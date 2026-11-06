@@ -12,16 +12,47 @@ $SR.Sessions = Join-Path $SR.Root 'sessions'
 $SR.State    = Join-Path $SR.Root 'install-state.json'   # user's original WT settings we replaced
 $SR.Config   = Join-Path $SR.Root 'config.json'          # user options, e.g. { "autoRestore": true }
 
-# User options with defaults; a missing or unreadable config.json means defaults
+# User options. Keeps every key in config.json (so unknown/future options survive a re-install) and
+# normalises known ones; a missing or unreadable file means defaults.
 function Get-SrConfig {
-    $c = [ordered]@{ autoRestore = $true }
+    $c = [ordered]@{}
     if (Test-Path $SR.Config) {
         try {
             $f = Get-Content $SR.Config -Raw | ConvertFrom-Json -AsHashtable
-            foreach ($k in @($c.Keys)) { if ($f.Contains($k)) { $c[$k] = $f[$k] } }
+            foreach ($k in $f.Keys) { $c[$k] = $f[$k] }
         } catch {}
     }
+    # Hand edits like "false" / "off" must not count as true
+    $c.autoRestore = if ($c.Contains('autoRestore')) {
+        if ($c.autoRestore -is [bool]) { $c.autoRestore } else { "$($c.autoRestore)" -match '^(true|on|yes|1)$' }
+    } else { $true }
     $c
+}
+
+# Is this Windows Terminal newTabMenu the one install.ps1 wrote (vs the user's own)?
+function Test-OurNewTabMenu($menu) { [bool]($menu -and (@($menu).profile -contains $SR.GuidNew)) }
+
+# True if the Claude process recorded in a session entry is still running (pid + start time, so a reused pid doesn't count)
+function Test-SessionAlive($s) {
+    $p = Get-Process -Id $s.pid -ErrorAction SilentlyContinue
+    [bool]($p -and [math]::Abs(([DateTimeOffset]$p.StartTime).ToUnixTimeSeconds() - $s.pidStart) -le 5)
+}
+
+# Housekeeping (run from the SessionStart hook, so it happens even with auto-restore off): drop dead sessions
+# inactive for $Days, orphaned .seq files, and cap end.log.
+function Remove-StaleSessions([int]$Days = 7) {
+    $cutoff = (Get-Date).AddDays(-$Days)
+    foreach ($f in Get-ChildItem $SR.Sessions -Filter *.json -ErrorAction SilentlyContinue) {
+        try { $s = Get-Content $f.FullName -Raw | ConvertFrom-Json } catch { continue }
+        $last = if ($s.transcript -and (Test-Path -LiteralPath $s.transcript)) { (Get-Item -LiteralPath $s.transcript).LastWriteTime } else { $f.LastWriteTime }
+        if ($last -lt $cutoff -and -not (Test-SessionAlive $s)) { Remove-Item $f.FullName -Force }
+    }
+    Get-ChildItem $SR.Sessions -Filter *.seq -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-1) } | Remove-Item -Force
+    $log = Join-Path $SR.Root 'end.log'
+    if ((Test-Path $log) -and (Get-Item $log).Length -gt 256KB) {
+        $keep = Get-Content $log -Tail 1000; Set-Content $log $keep -Encoding utf8
+    }
 }
 $SR.Guids    = @($SR.GuidAll, $SR.GuidSession, $SR.GuidResume, $SR.GuidNew)
 

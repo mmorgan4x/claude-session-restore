@@ -23,6 +23,7 @@ if (-not $PSScriptRoot -or -not (Test-Path (Join-Path $PSScriptRoot 'src\common.
             Expand-Archive "$tmp\repo.zip" $tmp
             $fwd = if ($AutoRestore) { @('-AutoRestore', $AutoRestore) } else { @() }
             pwsh -NoProfile -File "$tmp\claude-session-restore-main\install.ps1" @fwd
+            if ($LASTEXITCODE) { Write-Error "claude-session-restore: install failed (exit code $LASTEXITCODE)." }
         } finally { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
     }
     return
@@ -77,33 +78,32 @@ if (-not $wtPaths) { Write-Warning 'Windows Terminal settings not found. Open Wi
 
 $state = if (Test-Path $SR.State) { Get-Content $SR.State -Raw | ConvertFrom-Json -AsHashtable } else { [ordered]@{} }
 
+# Order-insensitive fingerprint of a newTabMenu (WT may reorder keys when it rewrites settings.json),
+# used to tell whether the user edited the menu we wrote
+function Get-MenuKey($m) {
+    @($m | Where-Object { $_ } | ForEach-Object {
+        $e = $_
+        if ($e -is [System.Collections.IDictionary]) {
+            ($e.Keys | Sort-Object | ForEach-Object { "$_=" + (Get-MenuKey $e[$_]) }) -join ','
+        } elseif ($e -is [System.Collections.IList]) { '[' + (Get-MenuKey $e) + ']' }
+        else { "$e" }
+    }) -join ';'
+}
+
 foreach ($wp in $wtPaths) {
     $w = Get-Content $wp -Raw | ConvertFrom-Json -AsHashtable
 
-    # Remember the user's own settings once (not ours from a previous install)
-    if (-not $state.Contains($wp)) {
-        $state[$wp] = [ordered]@{
-            startupActions        = if ($w.startupActions -notmatch 'session-tracker') { $w.startupActions } else { $null }
-            firstWindowPreference = $w.firstWindowPreference
-        }
-        if ($w.startupActions -and $w.startupActions -notmatch 'session-tracker') {
-            Write-Warning "Replacing your startupActions ('$($w.startupActions)'); uninstall.ps1 restores it."
-        }
-        if ($w.firstWindowPreference -eq 'persistedWindowLayout') {
-            Write-Warning "Turning off 'reopen previous session' (it would duplicate restored tabs); uninstall.ps1 restores it."
-        }
+    # The user's own settings we replace. Re-captured on every run whenever the current value isn't ours,
+    # so changes made after the first install are what uninstall restores.
+    if (-not $state.Contains($wp)) { $state[$wp] = [ordered]@{ startupActions = $null; firstWindowPreference = $null; newTabMenu = $null } }
+    $st = $state[$wp]
+    if ($w.startupActions -and $w.startupActions -notmatch 'session-tracker') {
+        $st.startupActions = $w.startupActions
+        if ($cfg.autoRestore) { Write-Warning "Replacing your startupActions ('$($w.startupActions)'); uninstall.ps1 restores it." }
     }
-    # Added later than the keys above, so also handle installs whose state predates it
-    if (-not $state[$wp].Contains('newTabMenu')) {
-        $ours = $w.newTabMenu -and ($w.newTabMenu.profile -contains $SR.GuidNew)
-        # @() keeps a one-entry menu an array (an if-expression would unwrap it)
-        $state[$wp].newTabMenu = $null
-        if ($w.newTabMenu -and -not $ours) { $state[$wp].newTabMenu = @($w.newTabMenu) }
-        # Windows Terminal's default menu is just [remainingProfiles]: nothing custom to warn about
-        $custom = @($w.newTabMenu | Where-Object { $_.type -ne 'remainingProfiles' })
-        if ($custom -and -not $ours) {
-            Write-Warning "Replacing your custom new-tab menu (newTabMenu); uninstall.ps1 restores it."
-        }
+    if ($w.firstWindowPreference -eq 'persistedWindowLayout') {
+        $st.firstWindowPreference = $w.firstWindowPreference
+        Write-Warning "Turning off 'reopen previous session' (it would duplicate restored tabs); uninstall.ps1 restores it."
     }
 
     if ($w.profiles -is [System.Collections.IList]) { $w.profiles = [ordered]@{ list = $w.profiles } }
@@ -118,23 +118,48 @@ foreach ($wp in $wtPaths) {
                          commandline = 'pwsh -NoExit'; startingDirectory = '%USERPROFILE%' }
     if (-not $icon) { $list | Where-Object { $_.guid -in $SR.Guids } | ForEach-Object { $_.Remove('icon') } }
     $w.profiles.list = $list
-    # Restore on app launch only (not when clicking +), in a tab styled as the default profile
-    $def = if ($w.defaultProfile) { $w.defaultProfile } else { 'PowerShell' }
-    $w.startupActions = "nt -p `"$def`" pwsh -NoExit -File `"$restore`" -UseTab -Startup"
-    # + dropdown: default profile, other profiles, separator, Claude profiles (flat, no submenu)
-    # Other profiles sit right under the default (empty if all hidden), so no separator can ever double up
-    $w.newTabMenu = @(
-        [ordered]@{ type = 'profile'; profile = $def }
-        [ordered]@{ type = 'remainingProfiles' }
-        [ordered]@{ type = 'separator' }
-        [ordered]@{ type = 'profile'; profile = $SR.GuidNew }
-        [ordered]@{ type = 'profile'; profile = $SR.GuidResume }
-        [ordered]@{ type = 'profile'; profile = $SR.GuidAll }
-    )
+
+    # Default profile: WT's defaultProfile (guid or name) if it exists, else the first visible profile (what WT uses)
+    $def = $w.defaultProfile
+    if (-not $def -or -not ($list | Where-Object { $_.guid -eq $def -or $_.name -eq $def })) {
+        $def = ($list | Where-Object { -not $_.hidden -and $_.guid -notin $SR.Guids } | Select-Object -First 1).guid
+    }
+    $defIsOurs = [bool]($list | Where-Object { ($_.guid -eq $def -or $_.name -eq $def) -and $_.guid -in $SR.Guids })
+
+    # Startup restore only when auto-restore is on; off gives the first tab back to the default profile
+    if ($cfg.autoRestore) {
+        $w.startupActions = "nt -p `"$def`" pwsh -NoExit -File `"$restore`" -UseTab -Startup"
+    } elseif ($w.startupActions -match 'session-tracker') {
+        if ($st.startupActions) { $w.startupActions = $st.startupActions } else { $w.Remove('startupActions') }
+    }
+
+    # + dropdown: default profile, other profiles, separator, Claude profiles (flat, no submenu).
+    # Other profiles sit right under the default (empty if all hidden), so no separator can ever double up.
+    $menu = @()
+    if (-not $defIsOurs) { $menu += [ordered]@{ type = 'profile'; profile = $def } }
+    $menu += [ordered]@{ type = 'remainingProfiles' }, [ordered]@{ type = 'separator' },
+             [ordered]@{ type = 'profile'; profile = $SR.GuidNew },
+             [ordered]@{ type = 'profile'; profile = $SR.GuidResume },
+             [ordered]@{ type = 'profile'; profile = $SR.GuidAll }
+    $cur = Get-MenuKey $w.newTabMenu
+    if (-not (Test-OurNewTabMenu $w.newTabMenu)) {
+        # The user's menu: save it (uninstall restores it) and replace. WT's default is just [remainingProfiles].
+        $st.newTabMenu = if ($w.newTabMenu) { @($w.newTabMenu) } else { $null }
+        if (@($w.newTabMenu | Where-Object { $_.type -ne 'remainingProfiles' })) {
+            Write-Warning "Replacing your custom new-tab menu (newTabMenu); uninstall.ps1 restores it."
+        }
+        $w.newTabMenu = $menu
+    } elseif ($st.ourMenu -and $cur -ne $st.ourMenu) {
+        Write-Host "Menu     -> kept your edits to the + menu"
+    } else {
+        $w.newTabMenu = $menu
+    }
+    $st.ourMenu = Get-MenuKey $w.newTabMenu
+
     if ($w.firstWindowPreference -eq 'persistedWindowLayout') { $w.Remove('firstWindowPreference') }
     Save-Json $w $wp
     Write-Host "Terminal -> $wp"
 }
-$state | ConvertTo-Json -Depth 8 | Set-Content $SR.State -Encoding utf8
+$state | ConvertTo-Json -Depth 32 | Set-Content $SR.State -Encoding utf8
 
 Write-Host "`nInstalled. Restart Windows Terminal. Sessions started from now on are tracked." -ForegroundColor Green

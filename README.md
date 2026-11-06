@@ -9,6 +9,7 @@ Reopens your Claude Code sessions in Windows Terminal after a crash, in their or
 - **Restore** – when Windows Terminal starts, the first tab resumes the first crashed session (`claude --resume <id>`) and the rest open as new tabs to its right, named after the session. Clicking **+** is untouched.
   - Sessions active in the last 12h restore automatically; older ones prompt y/N.
   - Sessions with no messages are skipped (nothing to resume).
+  - Lost sessions inactive for 7 days are cleaned up automatically.
 - **Profiles** (in the **+** dropdown, below a separator after your profiles):
   - *Claude: New* – starts a new `claude` session.
   - *Claude: Resume* – runs `claude --resume` (Claude's session picker).
@@ -28,7 +29,7 @@ Restart Windows Terminal. Run the same line again to update. From a clone: `pwsh
 
 ### Turn auto-restore on/off
 
-Re-run the installer with `-AutoRestore off` (or `on`). Sessions are still tracked, so *Claude: Restore Previous Sessions* keeps working; only the restore on Windows Terminal startup is skipped. Updating without the flag keeps your choice.
+Re-run the installer with `-AutoRestore off` (or `on`). Sessions are still tracked, so *Claude: Restore Previous Sessions* keeps working; only the restore on Windows Terminal startup is skipped, and the first tab goes back to your default profile. Updating without the flag keeps your choice.
 
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mmorgan4x/claude-session-restore/main/install.ps1))) -AutoRestore off
@@ -39,7 +40,7 @@ From a clone: `pwsh -File install.ps1 -AutoRestore off`. The setting lives in `~
 
 Before the first change, `~/.claude/settings.json` and the Windows Terminal `settings.json` are backed up once to `settings.json.pre-session-restore.bak` (plus a rolling `settings.json.bak` on every run).
 
-Install replaces Windows Terminal's `startupActions` and `newTabMenu` (the **+** dropdown layout) and turns off "reopen previous session" (it would duplicate restored tabs). It warns when it does, and `uninstall.ps1` puts your originals back. The Windows Terminal settings file is rewritten, so comments in it are dropped.
+Install replaces Windows Terminal's `startupActions` and `newTabMenu` (the **+** dropdown layout) and turns off "reopen previous session" (it would duplicate restored tabs). It warns when it does, and `uninstall.ps1` puts your originals back. If you edit the **+** menu after installing, updates keep your edits. The Windows Terminal settings file is rewritten, so comments in it are dropped.
 
 ## Uninstall
 

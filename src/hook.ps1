@@ -58,5 +58,9 @@ if (Test-Path $seq) { $started = [long](Get-Content $seq -Raw); Remove-Item $seq
     started    = $started
     wtPid      = if ($wt) { $wt.ProcessId } else { $null }
     wtStart    = if ($wt) { ([DateTimeOffset]$wt.CreationDate).ToUnixTimeSeconds() } else { $null }
-} | ConvertTo-Json | Set-Content $file -Encoding utf8
+} | ConvertTo-Json | Set-Content "$file.tmp" -Encoding utf8
+# Atomic replace so restore.ps1 never reads a half-written file
+Move-Item "$file.tmp" $file -Force
+
+Remove-StaleSessions
 exit 0
