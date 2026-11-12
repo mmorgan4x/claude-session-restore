@@ -12,6 +12,8 @@ $dir  = $SR.Sessions
 $file = Join-Path $dir "$($data.session_id).json"
 
 if ($Event -eq 'end') {
+    # Never tracked (headless, outside WT, ...): nothing to do
+    if (-not (Test-Path $file)) { exit 0 }
     $clean = $data.reason -in 'prompt_input_exit', 'clear', 'logout'
     # The entry may belong to another copy of this session (reopened elsewhere); only touch our own
     # (can't tell who we are -> don't touch it either)
@@ -40,6 +42,8 @@ if (-not $env:WT_SESSION) { exit 0 }
 
 $claude = Get-OwningClaude
 if (-not $claude) { exit 0 }
+# Headless runs (claude -p from a script or another session) inherit WT_SESSION but aren't tabs to restore
+if ($claude.CommandLine -match '(^|\s)(-p|--print)(\s|$)') { exit 0 }
 # Hosting Windows Terminal (tells tab-close from window-close/crash); $null if another app sits in between
 $wt = Get-WtHost $claude
 
